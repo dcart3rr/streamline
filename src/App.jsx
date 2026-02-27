@@ -149,9 +149,34 @@ const db={
   upsertBusiness:async(b)=>{const{data,error}=await sb.from("businesses").upsert(b).select().single();if(error)throw error;return data;},
   getLeads:async(bid)=>{const{data,error}=await sb.from("leads").select("*").eq("business_id",bid).order("created_at",{ascending:false});if(error)throw error;return data||[];},
   insertLead:async(l)=>{const{data,error}=await sb.from("leads").insert([l]).select().single();if(error)throw error;return data;},
-  updateLeadStatus:async(id,s)=>{const{error}=await sb.from("leads").update({status:s}).eq("id",id);if(error)throw error;},
+  updateLeadStatus:async(id,s,extra={})=>{const{error}=await sb.from("leads").update({status:s,...extra}).eq("id",id);if(error)throw error;},
+  getWonLeads:async(bid)=>{const{data}=await sb.from("leads").select("*").eq("business_id",bid).eq("status","won").order("completed_at",{ascending:false});return data||[];},
+  getAllWonLeads:async()=>{const{data}=await sb.from("leads").select("*").eq("status","won").order("completed_at",{ascending:false});return data||[];},
+  getInvoices:async(bid)=>{const{data}=await sb.from("invoices").select("*").eq("business_id",bid).order("created_at",{ascending:false});return data||[];},
+  getAllInvoices:async()=>{const{data}=await sb.from("invoices").select("*").order("created_at",{ascending:false});return data||[];},
+  createInvoice:async(inv)=>{const{data,error}=await sb.from("invoices").insert([inv]).select().single();if(error)throw error;return data;},
+  markInvoicePaid:async(id)=>{const{error}=await sb.from("invoices").update({status:"paid",paid_at:new Date().toISOString()}).eq("id",id);if(error)throw error;},
+  markLeadsBilled:async(leadIds,invoiceId)=>{const{error}=await sb.from("leads").update({billed:true,invoice_id:invoiceId}).in("id",leadIds);if(error)throw error;},
   getNotifications:async(bid)=>{const{data}=await sb.from("notifications").select("*").eq("business_id",bid).order("created_at",{ascending:false}).limit(50);return data||[];},
   insertNotification:async(n)=>sb.from("notifications").insert([n]),
+  // Billing / Stripe
+  getBilling:async(bid)=>{const{data}=await sb.from("billing").select("*").eq("business_id",bid).single();return data;},
+  upsertBilling:async(b)=>{const{error}=await sb.from("billing").upsert(b);if(error)throw error;},
+  requestCancellation:async(bid,reason)=>{
+    const{error}=await sb.from("billing").update({
+      cancel_requested:true,
+      cancel_reason:reason,
+      cancel_requested_at:new Date().toISOString(),
+      status:"cancel_pending",
+    }).eq("business_id",bid);
+    if(error)throw error;
+  },
+  getAllBilling:async()=>{const{data}=await sb.from("billing").select("*");return data||[];},
+  // Contractor applications (CRM)
+  submitApplication:async(a)=>{const{data,error}=await sb.from("contractor_applications").insert([a]).select().single();if(error)throw error;return data;},
+  getApplications:async()=>{const{data,error}=await sb.from("contractor_applications").select("*").order("created_at",{ascending:false});if(error)throw error;return data||[];},
+  updateApplicationStage:async(id,stage,notes)=>{const{error}=await sb.from("contractor_applications").update({stage,...(notes!==undefined?{admin_notes:notes}:{})}).eq("id",id);if(error)throw error;},
+  deleteApplication:async(id)=>{const{error}=await sb.from("contractor_applications").delete().eq("id",id);if(error)throw error;},
   markNotifsRead:async(bid)=>sb.from("notifications").update({read:true}).eq("business_id",bid).eq("read",false),
   subscribeToLeads:(bid,cb)=>sb.channel("leads-rt").on("postgres_changes",{event:"INSERT",schema:"public",table:"leads",filter:`business_id=eq.${bid}`},p=>cb(p.new)).subscribe(),
   // ── Lead routing engine: cap enforcement + soft city balancing ──
@@ -756,6 +781,10 @@ function NotificationsPanel({userId}){
 // ─── LEAD DETAIL ──────────────────────────────────────────────────────────────
 function LeadDetail({lead,onClose,onStatusChange,calendlyUrl}){
   if(!lead)return null;
+  const [showWonModal,setShowWonModal]=useState(false);
+  const [wonJobValue,setWonJobValue]=useState("");
+  const [wonDate,setWonDate]=useState(new Date().toISOString().split("T")[0]);
+  const [wonNotes,setWonNotes]=useState("");
   const BL={budget:"Budget",urgency:"Urgency",ownership:"Ownership",size:"Property Size",clarity:"Issue Clarity",contact:"Contact Quality"};
   const MX={budget:20,urgency:20,ownership:15,size:15,clarity:15,contact:15};
   const breakdown=typeof lead.breakdown==="string"?JSON.parse(lead.breakdown):(lead.breakdown||{});
@@ -798,10 +827,42 @@ function LeadDetail({lead,onClose,onStatusChange,calendlyUrl}){
       </div>
     </div>}
     {lead.status!=="won"&&lead.status!=="lost"&&<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-      <Btn variant="success" onClick={()=>{onStatusChange(lead.id,"won");onClose();}} style={{flex:1,minWidth:110}}>✓ Won</Btn>
-      <Btn variant="danger" onClick={()=>{onStatusChange(lead.id,"lost");onClose();}} style={{flex:1,minWidth:110}}>✗ Lost</Btn>
-      {lead.status==="new"&&<Btn variant="outline" onClick={()=>{onStatusChange(lead.id,"contacted");onClose();}} style={{flex:1,minWidth:110}}>📞 Contacted</Btn>}
+      <Btn variant="success" onClick={()=>setShowWonModal(true)} style={{flex:1,minWidth:110}}>✓ Won</Btn>
+      <Btn variant="danger" onClick={()=>{onStatusChange(lead.id,"lost",{});onClose();}} style={{flex:1,minWidth:110}}>✗ Lost</Btn>
+      {lead.status==="new"&&<Btn variant="outline" onClick={()=>{onStatusChange(lead.id,"contacted",{});onClose();}} style={{flex:1,minWidth:110}}>📞 Contacted</Btn>}
     </div>}
+    {lead.status==="won"&&<div style={{background:"rgba(16,185,129,0.08)",border:"1px solid rgba(16,185,129,0.2)",borderRadius:10,padding:"12px 14px"}}>
+      <div style={{fontSize:11,color:T.muted,fontFamily:"'JetBrains Mono',monospace",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Job Summary</div>
+      <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+        <span style={{fontSize:13,color:T.green,fontWeight:600}}>{lead.job_value?`$${Number(lead.job_value).toLocaleString()} job value`:"No job value recorded"}</span>
+        {lead.completed_at&&<span style={{fontSize:12,color:T.muted}}>Completed {new Date(lead.completed_at).toLocaleDateString()}</span>}
+        {lead.billed&&<span style={{fontSize:11,background:"rgba(245,158,11,0.12)",color:T.amber,border:"1px solid rgba(245,158,11,0.25)",borderRadius:4,padding:"2px 7px"}}>Invoiced</span>}
+      </div>
+    </div>}
+    {/* Won job modal */}
+    <Modal open={showWonModal} onClose={()=>setShowWonModal(false)} title="Log Won Job">
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        <div style={{background:"rgba(16,185,129,0.06)",border:"1px solid rgba(16,185,129,0.2)",borderRadius:10,padding:"12px 14px",fontSize:13,color:T.offWhite,lineHeight:1.6}}>
+          🎉 Great work closing <strong>{lead.name}</strong>! Log the job details so your performance fee can be calculated accurately.
+        </div>
+        <Inp label="Total Job Value ($)" value={wonJobValue} onChange={setWonJobValue} type="number" placeholder="e.g. 3500" hint="The total amount the customer paid for the job"/>
+        <Inp label="Completion Date" value={wonDate} onChange={setWonDate} type="date"/>
+        <Inp label="Notes (optional)" value={wonNotes} onChange={setWonNotes} placeholder="Any notes about this job…"/>
+        {wonJobValue&&Number(wonJobValue)>0&&<div style={{background:T.surface2,border:`1px solid ${T.border2}`,borderRadius:10,padding:"12px 14px"}}>
+          <div style={{fontSize:11,color:T.muted,marginBottom:6}}>Estimated performance fee</div>
+          <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:22,fontWeight:700,color:T.amber}}>${(Number(wonJobValue)*0.05).toFixed(0)} <span style={{fontSize:12,color:T.muted,fontWeight:400}}>approx</span></div>
+          <div style={{fontSize:11,color:T.muted,marginTop:2}}>Based on plan rate — your admin will invoice the exact amount</div>
+        </div>}
+        <div style={{display:"flex",gap:8}}>
+          <Btn variant="outline" onClick={()=>setShowWonModal(false)} style={{flex:1}}>Cancel</Btn>
+          <Btn variant="success" onClick={async()=>{
+            const extra={job_value:wonJobValue?Number(wonJobValue):null,completed_at:wonDate||new Date().toISOString().split("T")[0],won_notes:wonNotes,billed:false};
+            await onStatusChange(lead.id,"won",extra);
+            setShowWonModal(false);onClose();
+          }} style={{flex:2}}>✓ Confirm Won Job</Btn>
+        </div>
+      </div>
+    </Modal>
   </Modal>;
 }
 
@@ -811,15 +872,23 @@ function LeadDetail({lead,onClose,onStatusChange,calendlyUrl}){
 function SettingsPanel({user,onSave,toast}){
   const [form,setForm]=useState({
     company:user.company||"",
-    industry:user.industry||"HVAC",
     notify_email:user.notify_email||user.email||"",
     calendly_url:user.calendly_url||"",
     phone:user.phone||"",
     city:user.city||"",
-    plan:user.plan||"Starter",
   });
   const [saving,setSaving]=useState(false);
+  const [billing,setBilling]=useState(null);
+  const [showCancel,setShowCancel]=useState(false);
+  const [cancelReason,setCancelReason]=useState("");
+  const [cancelling,setCancelling]=useState(false);
+  const [showPlanChange,setShowPlanChange]=useState(false);
   const set=k=>v=>setForm(f=>({...f,[k]:v}));
+
+  useEffect(()=>{
+    db.getBilling(user.id).then(b=>setBilling(b)).catch(()=>{});
+  },[user.id]);
+
   const save=async()=>{
     setSaving(true);
     try{
@@ -829,46 +898,171 @@ function SettingsPanel({user,onSave,toast}){
     }catch(e){toast({message:"Save failed",type:"error"});}
     setSaving(false);
   };
-  const intakeUrl=`${window.location.origin}/?industry=${form.industry.toLowerCase()}&bid=${user.id}`;
+
+  const requestCancel=async()=>{
+    if(!cancelReason.trim()){toast({message:"Please tell us why you're cancelling",type:"error"});return;}
+    setCancelling(true);
+    try{
+      await db.requestCancellation(user.id,cancelReason);
+      setBilling(b=>({...b,cancel_requested:true,status:"cancel_pending"}));
+      setShowCancel(false);
+      toast({message:"Cancellation requested — you'll keep access until the end of your billing period",type:"info"});
+    }catch(e){toast({message:"Request failed. Email hello@streamline.io",type:"error"});}
+    setCancelling(false);
+  };
+
+  const intakeUrl=`${window.location.origin}/?industry=${(user.industry||"hvac").toLowerCase()}&bid=${user.id}`;
+  const planCap=user.plan==="Growth"?50:20;
+  const now=new Date();
+  const monthStart=new Date(now.getFullYear(),now.getMonth(),1);
+  const daysLeft=new Date(now.getFullYear(),now.getMonth()+1,0).getDate()-now.getDate();
+
+  // Billing status display
+  const billingStatus=billing?.status||"active";
+  const statusConfig={
+    active:{color:T.green,label:"Active",icon:"✅"},
+    cancel_pending:{color:T.amber,label:"Cancels at period end",icon:"⏳"},
+    cancelled:{color:T.red,label:"Cancelled",icon:"❌"},
+    trial:{color:T.cyan,label:"Trial",icon:"🧪"},
+    past_due:{color:T.red,label:"Payment past due",icon:"⚠️"},
+  };
+  const sc=statusConfig[billingStatus]||statusConfig.active;
+
   return <div style={{display:"flex",flexDirection:"column",gap:24,maxWidth:700}}>
+
+    {/* ── Billing Status Banner ── */}
+    <div style={{background:billingStatus==="active"?"rgba(16,185,129,0.06)":billingStatus==="cancel_pending"?"rgba(245,158,11,0.06)":"rgba(239,68,68,0.06)",border:`1px solid ${sc.color}30`,borderRadius:14,padding:"16px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
+      <div style={{display:"flex",alignItems:"center",gap:12}}>
+        <span style={{fontSize:22}}>{sc.icon}</span>
+        <div>
+          <div style={{fontSize:14,fontWeight:600,color:T.white,marginBottom:2}}>{user.plan||"Starter"} Plan · <span style={{color:sc.color}}>{sc.label}</span></div>
+          <div style={{fontSize:12,color:T.muted}}>
+            {billingStatus==="active"&&`${user.plan==="Growth"?"$499":"$299"}/mo · ${planCap} leads/month · ${daysLeft} days until next billing`}
+            {billingStatus==="cancel_pending"&&"Your plan will cancel at the end of the current billing period"}
+            {billingStatus==="cancelled"&&"Your plan has been cancelled. Contact us to reactivate."}
+            {billingStatus==="past_due"&&"Your last payment failed. Please update your payment method."}
+          </div>
+        </div>
+      </div>
+      <div style={{display:"flex",gap:8}}>
+        {billingStatus==="active"&&<button onClick={()=>setShowPlanChange(true)} style={{background:T.surface2,border:`1px solid ${T.border2}`,borderRadius:8,padding:"7px 14px",cursor:"pointer",color:T.offWhite,fontSize:12,fontWeight:500}}>Change Plan</button>}
+        {(billingStatus==="active"||billingStatus==="past_due")&&<button onClick={()=>setShowCancel(true)} style={{background:"none",border:`1px solid rgba(239,68,68,0.3)`,borderRadius:8,padding:"7px 14px",cursor:"pointer",color:T.red,fontSize:12}}>Cancel Plan</button>}
+      </div>
+    </div>
+
+    {/* ── Payment Method ── */}
+    <div>
+      <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:12}}>Payment Method</div>
+      {billing?.card_last4?(
+        <div style={{background:T.surface2,border:`1px solid ${T.border2}`,borderRadius:12,padding:"14px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <div style={{width:40,height:28,background:"linear-gradient(135deg,#1a1f2e,#2d3748)",borderRadius:5,border:`1px solid ${T.border2}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>💳</div>
+            <div>
+              <div style={{fontSize:13,fontWeight:500,color:T.white}}>{billing.card_brand||"Card"} ending in {billing.card_last4}</div>
+              <div style={{fontSize:11,color:T.muted}}>Expires {billing.card_exp_month}/{billing.card_exp_year}</div>
+            </div>
+          </div>
+          <button onClick={()=>toast({message:"To update your card, contact hello@streamline.io",type:"info"})} style={{background:"none",border:`1px solid ${T.border2}`,borderRadius:7,padding:"6px 12px",cursor:"pointer",color:T.muted,fontSize:12}}>Update Card</button>
+        </div>
+      ):(
+        <div style={{background:T.surface2,border:`1px solid ${T.border2}`,borderRadius:12,padding:"20px 16px",textAlign:"center"}}>
+          <div style={{fontSize:13,color:T.muted,marginBottom:10}}>No payment method on file — contact us to set up billing</div>
+          <Btn size="sm" variant="outline" onClick={()=>toast({message:"Contact hello@streamline.io to add a payment method",type:"info"})}>Add Payment Method</Btn>
+        </div>
+      )}
+    </div>
+
+    <div style={{height:1,background:T.border}}/>
+
+    {/* ── Business Profile ── */}
     <div>
       <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:16}}>Business Profile</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}} className="grid-1-mobile">
         <Inp label="Company Name" value={form.company} onChange={set("company")} placeholder="Apex Climate Control"/>
         <Inp label="Phone Number" value={form.phone} onChange={set("phone")} type="tel" placeholder="(614) 555-0000"/>
         <Inp label="City / Market" value={form.city} onChange={set("city")} placeholder="Columbus, OH"/>
-        <Inp label="Primary Industry" value={form.industry} onChange={set("industry")} type="select" options={[{value:"HVAC",label:"HVAC"},{value:"Roofing",label:"Roofing"},{value:"Plumbing",label:"Plumbing"},{value:"Electrical",label:"Electrical"}]}/>
+        {/* Industry LOCKED — read only */}
+        <div>
+          <div style={{fontSize:12,fontWeight:500,color:T.offWhite,marginBottom:6}}>Primary Industry</div>
+          <div style={{background:T.surface2,border:`1px solid ${T.border2}`,borderRadius:8,padding:"10px 12px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <span style={{fontSize:13,color:T.white,fontWeight:500}}>{user.industry||"HVAC"}</span>
+            <span style={{fontSize:10,color:T.muted,background:T.surface3,border:`1px solid ${T.border}`,borderRadius:4,padding:"2px 7px",fontFamily:"'JetBrains Mono',monospace",letterSpacing:"0.05em"}}>LOCKED</span>
+          </div>
+          <div style={{fontSize:11,color:T.muted,marginTop:4}}>Industry can only be changed by Streamline. Contact hello@streamline.io</div>
+        </div>
         <Inp label="Notification Email" value={form.notify_email} onChange={set("notify_email")} type="email" placeholder="alerts@yourcompany.com"/>
       </div>
     </div>
+
     <div style={{height:1,background:T.border}}/>
+
+    {/* ── Calendly ── */}
     <div>
       <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Calendly Link</div>
-      <div style={{fontSize:12,color:T.muted,marginBottom:12}}>Qualified leads (score 50+) will see a booking option after submitting the intake form. Paste your Calendly scheduling link below.</div>
+      <div style={{fontSize:12,color:T.muted,marginBottom:12}}>Qualified leads (score 50+) will see a booking option after submitting the intake form.</div>
       <Inp label="Your Calendly URL" value={form.calendly_url} onChange={set("calendly_url")} placeholder="https://calendly.com/yourname/estimate" hint="Go to calendly.com → copy your event link"/>
       {form.calendly_url&&<div style={{marginTop:10,padding:"10px 14px",background:"rgba(16,185,129,0.08)",border:"1px solid rgba(16,185,129,0.2)",borderRadius:8,fontSize:12,color:T.green}}>✓ Qualified leads will see a booking widget after submitting their intake form</div>}
     </div>
+
     <div style={{height:1,background:T.border}}/>
+
+    {/* ── Intake URL ── */}
     <div>
       <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Your Intake Form URL</div>
-      <div style={{fontSize:12,color:T.muted,marginBottom:10}}>Use this URL in your ads. Leads submitted from this URL go directly to your account.</div>
+      <div style={{fontSize:12,color:T.muted,marginBottom:10}}>Use this URL in your ads. Leads submitted here go directly to your account.</div>
       <div style={{background:T.surface2,border:`1px solid ${T.border2}`,borderRadius:10,padding:"12px 14px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
         <code style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:T.blueL,flex:1,wordBreak:"break-all"}}>{intakeUrl}</code>
-        <button onClick={()=>{navigator.clipboard.writeText(intakeUrl);toast({message:"Copied to clipboard",type:"success"});}} style={{background:T.blue,border:"none",borderRadius:7,padding:"7px 14px",cursor:"pointer",color:"white",fontSize:12,fontWeight:600,flexShrink:0}}>Copy</button>
-      </div>
-      <div style={{marginTop:8,fontSize:11,color:T.muted}}>Add <code style={{fontFamily:"'JetBrains Mono',monospace",color:T.offWhite}}>?industry=roofing&bid={user.id}</code> for other industries</div>
-    </div>
-    <div style={{height:1,background:T.border}}/>
-    <div>
-      <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:12}}>Current Plan</div>
-      <div style={{display:"flex",gap:10}}>
-        {["Starter","Growth"].map(p=><div key={p} onClick={()=>set("plan")(p)} style={{flex:1,padding:"14px 16px",borderRadius:12,cursor:"pointer",border:`2px solid ${form.plan===p?T.blue:T.border2}`,background:form.plan===p?"rgba(37,99,235,0.08)":T.surface2,transition:"all 0.2s"}}>
-          <div style={{fontSize:14,fontWeight:600,color:T.white,marginBottom:2}}>{p}</div>
-          <div style={{fontSize:12,color:T.muted}}>{p==="Starter"?"$299/mo · 20 leads · $150/close":"$499/mo · 50 leads · $100/close"}</div>
-        </div>)}
+        <button onClick={()=>{navigator.clipboard.writeText(intakeUrl);toast({message:"Copied!",type:"success"});}} style={{background:T.blue,border:"none",borderRadius:7,padding:"7px 14px",cursor:"pointer",color:"white",fontSize:12,fontWeight:600,flexShrink:0}}>Copy</button>
       </div>
     </div>
+
     <Btn onClick={save} disabled={saving}>{saving?<span style={{display:"flex",alignItems:"center",gap:8}}><Spinner size={14}/>Saving…</span>:"Save Settings"}</Btn>
+
+    {/* ── Plan Change Modal ── */}
+    <Modal open={showPlanChange} onClose={()=>setShowPlanChange(false)} title="Change Plan">
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        <p style={{fontSize:13,color:T.muted}}>Plan changes take effect at the start of your next billing period.</p>
+        {["Starter","Growth"].map(p=>(
+          <div key={p} onClick={()=>{}} style={{padding:"16px",borderRadius:12,border:`2px solid ${user.plan===p?T.blue:T.border2}`,background:user.plan===p?"rgba(37,99,235,0.08)":T.surface2,cursor:"pointer"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+              <div style={{fontSize:15,fontWeight:600,color:T.white}}>{p}</div>
+              <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:14,color:T.blueL}}>${p==="Starter"?"299":"499"}/mo</div>
+            </div>
+            <div style={{fontSize:12,color:T.muted}}>{p==="Starter"?"20 leads/month · $150/close":"50 leads/month · $100/close"}</div>
+            {user.plan===p&&<div style={{marginTop:8,fontSize:11,color:T.green}}>✓ Your current plan</div>}
+          </div>
+        ))}
+        <p style={{fontSize:12,color:T.muted}}>To change your plan, contact us at <span style={{color:T.blueL}}>hello@streamline.io</span> and we'll update it within 24 hours.</p>
+        <Btn variant="outline" onClick={()=>setShowPlanChange(false)}>Close</Btn>
+      </div>
+    </Modal>
+
+    {/* ── Cancellation Modal ── */}
+    <Modal open={showCancel} onClose={()=>setShowCancel(false)} title="Cancel Your Plan">
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        <div style={{background:"rgba(245,158,11,0.08)",border:"1px solid rgba(245,158,11,0.2)",borderRadius:10,padding:"14px 16px"}}>
+          <div style={{fontSize:13,fontWeight:600,color:T.amber,marginBottom:4}}>⏳ Access until end of billing period</div>
+          <div style={{fontSize:12,color:T.muted}}>You'll keep full access to your dashboard and continue receiving leads until the end of the current month. After that, your account will be deactivated.</div>
+        </div>
+        <div>
+          <div style={{fontSize:13,fontWeight:500,color:T.offWhite,marginBottom:8}}>Why are you cancelling? <span style={{color:T.red}}>*</span></div>
+          <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
+            {["Lead quality wasn't what I expected","Too expensive for my budget","Not enough leads in my area","Switching to a different service","Business is slowing down","Other"].map(r=>(
+              <button key={r} onClick={()=>setCancelReason(r)} style={{padding:"9px 12px",borderRadius:8,border:`1px solid ${cancelReason===r?T.red:T.border2}`,background:cancelReason===r?"rgba(239,68,68,0.08)":"none",color:cancelReason===r?"#F87171":T.offWhite,cursor:"pointer",fontSize:13,textAlign:"left",transition:"all 0.15s"}}>
+                {cancelReason===r?"● ":"○ "}{r}
+              </button>
+            ))}
+          </div>
+          <textarea value={cancelReason.startsWith("Other")||!["Lead quality wasn't what I expected","Too expensive for my budget","Not enough leads in my area","Switching to a different service","Business is slowing down","Other"].includes(cancelReason)?cancelReason:""} onChange={e=>setCancelReason(e.target.value)} placeholder="Tell us more (optional)…" style={{width:"100%",background:T.surface2,border:`1px solid ${T.border2}`,borderRadius:8,padding:"10px 12px",color:T.white,fontSize:13,outline:"none",minHeight:60,resize:"vertical",fontFamily:"inherit"}}/>
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <Btn variant="outline" onClick={()=>setShowCancel(false)} style={{flex:1}}>Keep My Plan</Btn>
+          <Btn variant="danger" onClick={requestCancel} disabled={cancelling||!cancelReason} style={{flex:1}}>
+            {cancelling?<span style={{display:"flex",alignItems:"center",gap:8}}><Spinner size={13}/>Processing…</span>:"Confirm Cancellation"}
+          </Btn>
+        </div>
+      </div>
+    </Modal>
   </div>;
 }
 
@@ -1058,9 +1252,9 @@ function Dashboard({user,onLogout}){
     return()=>sb.removeChannel(ch);
   },[currentUser.id]);
 
-  const updateStatus=async(id,status)=>{
+  const updateStatus=async(id,status,extra={})=>{
     try{
-      await db.updateLeadStatus(id,status);
+      await db.updateLeadStatus(id,status,extra);
       setLeads(p=>p.map(l=>l.id===id?{...l,status}:l));
       showToast({message:`Lead marked as ${status}`,type:status==="won"?"success":"info"});
     }catch(e){showToast({message:"Failed to update",type:"error"});}
@@ -1131,25 +1325,32 @@ function Dashboard({user,onLogout}){
             ))}
           </div>
 
-          {/* Monthly cap bar */}
+          {/* Monthly performance summary */}
           {(()=>{
             const now=new Date();
             const monthStart=new Date(now.getFullYear(),now.getMonth(),1);
-            const monthLeads=leads.filter(l=>new Date(l.created_at)>=monthStart).length;
-            const cap=currentUser.plan==="Growth"?50:20;
-            const pct=Math.min(Math.round((monthLeads/cap)*100),100);
-            const overflowCount=leads.filter(l=>new Date(l.created_at)>=monthStart&&l.source==="overflow").length;
-            const c=pct>=90?T.red:pct>=70?T.amber:T.green;
-            return <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:12,padding:"12px 16px",marginBottom:14,display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
-              <div style={{fontSize:11,color:T.muted,fontFamily:"'JetBrains Mono',monospace",textTransform:"uppercase",letterSpacing:"0.07em",flexShrink:0}}>Monthly Cap</div>
-              <div style={{flex:1,minWidth:120}}>
-                <div style={{height:6,background:T.border,borderRadius:3,overflow:"hidden"}}>
-                  <div style={{width:`${pct}%`,height:"100%",background:`linear-gradient(90deg,${T.blue},${c})`,borderRadius:3,transition:"width 0.6s ease"}}/>
+            const monthName=now.toLocaleString("default",{month:"long"});
+            const monthLeads=leads.filter(l=>new Date(l.created_at)>=monthStart);
+            const monthWon=monthLeads.filter(l=>l.status==="won").length;
+            const monthContacted=monthLeads.filter(l=>l.status==="contacted"||l.status==="won").length;
+            const monthAvgScore=monthLeads.length>0?Math.round(monthLeads.reduce((s,l)=>s+(l.score||0),0)/monthLeads.length):0;
+            const monthCloseRate=monthLeads.length>0?Math.round((monthWon/monthLeads.length)*100):0;
+            const contactRate=monthLeads.length>0?Math.round((monthContacted/monthLeads.length)*100):0;
+            return <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:12,padding:"12px 20px",marginBottom:14,display:"flex",alignItems:"center",flexWrap:"wrap",gap:0}}>
+              <div style={{fontSize:11,color:T.muted,fontFamily:"'JetBrains Mono',monospace",textTransform:"uppercase",letterSpacing:"0.07em",marginRight:20,flexShrink:0}}>{monthName}</div>
+              {[
+                {label:"New Leads",value:monthLeads.length,color:T.blueL},
+                {label:"Contacted",value:monthContacted,color:T.cyan},
+                {label:"Won",value:monthWon,color:T.green},
+                {label:"Close Rate",value:`${monthCloseRate}%`,color:T.green},
+                {label:"Contact Rate",value:`${contactRate}%`,color:T.amber},
+                {label:"Avg Score",value:monthAvgScore,color:T.amber},
+              ].map((s,i)=><div key={s.label} style={{display:"flex",alignItems:"center",gap:16,paddingLeft:i>0?20:0,borderLeft:i>0:`1px solid ${T.border}`:0,marginLeft:i>0?4:0}}>
+                <div>
+                  <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:16,fontWeight:700,color:s.color,lineHeight:1}}>{s.value}</div>
+                  <div style={{fontSize:10,color:T.muted,marginTop:2}}>{s.label}</div>
                 </div>
-              </div>
-              <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:c,flexShrink:0}}>{monthLeads} / {cap}</div>
-              {pct>=90&&<span style={{fontSize:11,color:T.red,fontWeight:600}}>⚠ Near cap — overflow active</span>}
-              {overflowCount>0&&<span style={{fontSize:11,color:"#A78BFA"}}>↗ {overflowCount} overflow lead{overflowCount>1?"s":""} sent to peers this month</span>}
+              </div>)}
             </div>;
           })()}
           {/* Filters row */}
@@ -1209,7 +1410,7 @@ function Dashboard({user,onLogout}){
                 <div style={{alignSelf:"center",display:"flex",gap:4}} onClick={e=>e.stopPropagation()}>
                   {lead.status==="new"&&<button title="Mark Contacted" onClick={()=>updateStatus(lead.id,"contacted")} style={{background:"none",border:`1px solid ${T.border2}`,borderRadius:5,padding:"4px 7px",cursor:"pointer",color:T.muted,fontSize:12}}>📞</button>}
                   {lead.status!=="won"&&lead.status!=="lost"&&<>
-                    <button title="Mark Won" onClick={()=>updateStatus(lead.id,"won")} style={{background:"none",border:"1px solid rgba(16,185,129,0.3)",borderRadius:5,padding:"4px 7px",cursor:"pointer",color:T.green,fontSize:12}}>✓</button>
+                    <button title="Mark Won" onClick={()=>setSelected(lead)} style={{background:"none",border:"1px solid rgba(16,185,129,0.3)",borderRadius:5,padding:"4px 7px",cursor:"pointer",color:T.green,fontSize:12}}>✓</button>
                     <button title="Mark Lost" onClick={()=>updateStatus(lead.id,"lost")} style={{background:"none",border:"1px solid rgba(239,68,68,0.3)",borderRadius:5,padding:"4px 7px",cursor:"pointer",color:T.red,fontSize:12}}>✗</button>
                   </>}
                 </div>
@@ -1251,13 +1452,259 @@ function Dashboard({user,onLogout}){
       )}
     </div>
 
-    <LeadDetail lead={selected} onClose={()=>setSelected(null)} onStatusChange={(id,s)=>{updateStatus(id,s);setSelected(null);}} calendlyUrl={currentUser.calendly_url}/>
+    <LeadDetail lead={selected} onClose={()=>setSelected(null)} onStatusChange={(id,s,extra={})=>{updateStatus(id,s,extra);setSelected(null);}} calendlyUrl={currentUser.calendly_url}/>
     {toastMsg&&<Toast message={toastMsg.message} type={toastMsg.type} onDone={()=>setToastMsg(null)}/>}
     <Modal open={showNotifs} onClose={()=>{setShowNotifs(false);setUnread(0);}} title="Notifications">
       <NotificationsPanel userId={currentUser.id}/>
     </Modal>
   </div>;
 }
+
+// ─── CONTRACTOR APPLICATION FORM ──────────────────────────────────────────────
+const ADMIN_NOTIFY_EMAIL = "admin@streamline.io"; // change to your real email
+
+function ContractorApplicationForm({onBack}){
+  const [step,setStep]=useState(0);
+  const [submitting,setSubmitting]=useState(false);
+  const [done,setDone]=useState(false);
+  const [error,setError]=useState("");
+  const [form,setForm]=useState({
+    // Step 0 — Business basics
+    contact_name:"",company:"",email:"",phone:"",city:"",website:"",
+    // Step 1 — Trade + experience
+    industry:"",other_industry:"",years_in_business:"",team_size:"",
+    // Step 2 — Current situation
+    current_lead_sources:[],monthly_revenue:"",
+    // Step 3 — Fit + motivation
+    why_interested:"",social_instagram:"",social_facebook:"",social_other:"",
+  });
+  const set=k=>v=>setForm(f=>({...f,[k]:v}));
+  const toggleSource=s=>setForm(f=>({...f,current_lead_sources:
+    f.current_lead_sources.includes(s)
+      ?f.current_lead_sources.filter(x=>x!==s)
+      :[...f.current_lead_sources,s]
+  }));
+
+  const LEAD_SOURCES=["HomeAdvisor","Angi","Thumbtack","Bark.com","Google Ads","Facebook Ads","Referrals","Door knocking","Yard signs","Nextdoor","Yelp","Other"];
+  const INDUSTRIES=["HVAC","Roofing","Plumbing","Electrical","Landscaping","Pest Control","Cleaning","Other"];
+  const REVENUE_BANDS=["Under $10k/mo","$10k–$25k/mo","$25k–$50k/mo","$50k–$100k/mo","$100k+/mo","Prefer not to say"];
+  const TEAM_SIZES=["Just me","2–5","6–10","11–25","25+"];
+  const YEARS=["Less than 1 year","1–3 years","3–5 years","5–10 years","10+ years"];
+
+  const STEPS=[
+    {
+      title:"Tell us about your business",
+      sub:"Basic info so we can look you up and reach out",
+      valid:form.contact_name.trim().length>1&&form.company.trim().length>1&&form.email.includes("@")&&form.phone.replace(/\D/g,"").length>=10&&form.city.trim().length>1,
+      body:<div style={{display:"flex",flexDirection:"column",gap:14}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}} className="grid-1-mobile">
+          <Inp label="Your Name" value={form.contact_name} onChange={set("contact_name")} placeholder="Mike Reynolds" required/>
+          <Inp label="Company Name" value={form.company} onChange={set("company")} placeholder="Apex Climate Control" required/>
+          <Inp label="Email Address" value={form.email} onChange={set("email")} type="email" placeholder="mike@apexclimate.com" required/>
+          <Inp label="Phone Number" value={form.phone} onChange={set("phone")} type="tel" placeholder="(614) 555-0000" required/>
+          <Inp label="City / Market" value={form.city} onChange={set("city")} placeholder="Columbus, OH" required/>
+          <Inp label="Website (optional)" value={form.website} onChange={set("website")} placeholder="https://apexclimate.com"/>
+        </div>
+      </div>
+    },
+    {
+      title:"Your trade & experience",
+      sub:"Help us understand your business scope",
+      valid:!!form.industry&&!!form.years_in_business&&!!form.team_size,
+      body:<div style={{display:"flex",flexDirection:"column",gap:18}}>
+        <div>
+          <div style={{fontSize:13,fontWeight:500,color:T.offWhite,marginBottom:10}}>Primary Trade <span style={{color:T.red}}>*</span></div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}} className="grid-2-mobile">
+            {INDUSTRIES.map(ind=>(
+              <button key={ind} onClick={()=>set("industry")(ind)} style={{padding:"12px 8px",borderRadius:10,border:`2px solid ${form.industry===ind?T.blue:T.border2}`,background:form.industry===ind?"rgba(37,99,235,0.12)":T.surface2,color:form.industry===ind?T.white:T.offWhite,cursor:"pointer",fontSize:13,fontWeight:form.industry===ind?600:400,transition:"all 0.15s",touchAction:"manipulation"}}>
+                {ind==="HVAC"?"🌬️":ind==="Roofing"?"🏠":ind==="Plumbing"?"🔧":ind==="Electrical"?"⚡":ind==="Landscaping"?"🌿":ind==="Pest Control"?"🐛":ind==="Cleaning"?"🧹":"🔨"} {ind}
+              </button>
+            ))}
+          </div>
+          {form.industry==="Other"&&<div style={{marginTop:10}}><Inp label="Please specify" value={form.other_industry} onChange={set("other_industry")} placeholder="What trade?"/></div>}
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}} className="grid-1-mobile">
+          <div>
+            <div style={{fontSize:13,fontWeight:500,color:T.offWhite,marginBottom:8}}>Years in Business <span style={{color:T.red}}>*</span></div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {YEARS.map(y=>(
+                <button key={y} onClick={()=>set("years_in_business")(y)} style={{padding:"10px 14px",borderRadius:8,border:`1px solid ${form.years_in_business===y?T.blue:T.border2}`,background:form.years_in_business===y?"rgba(37,99,235,0.12)":"none",color:form.years_in_business===y?T.white:T.offWhite,cursor:"pointer",fontSize:13,textAlign:"left",transition:"all 0.15s"}}>
+                  {form.years_in_business===y?"● ":"○ "}{y}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div style={{fontSize:13,fontWeight:500,color:T.offWhite,marginBottom:8}}>Team Size <span style={{color:T.red}}>*</span></div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {TEAM_SIZES.map(t=>(
+                <button key={t} onClick={()=>set("team_size")(t)} style={{padding:"10px 14px",borderRadius:8,border:`1px solid ${form.team_size===t?T.blue:T.border2}`,background:form.team_size===t?"rgba(37,99,235,0.12)":"none",color:form.team_size===t?T.white:T.offWhite,cursor:"pointer",fontSize:13,textAlign:"left",transition:"all 0.15s"}}>
+                  {form.team_size===t?"● ":"○ "}{t}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    },
+    {
+      title:"Where do your leads come from?",
+      sub:"Select all current sources — be honest, this helps us show the gap",
+      valid:form.current_lead_sources.length>0&&!!form.monthly_revenue,
+      body:<div style={{display:"flex",flexDirection:"column",gap:18}}>
+        <div>
+          <div style={{fontSize:13,fontWeight:500,color:T.offWhite,marginBottom:10}}>Current Lead Sources <span style={{color:T.red}}>*</span> <span style={{fontSize:11,color:T.muted}}>(select all that apply)</span></div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}} className="grid-2-mobile">
+            {LEAD_SOURCES.map(s=>{
+              const active=form.current_lead_sources.includes(s);
+              return <button key={s} onClick={()=>toggleSource(s)} style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${active?T.blue:T.border2}`,background:active?"rgba(37,99,235,0.12)":T.surface2,color:active?T.white:T.offWhite,cursor:"pointer",fontSize:12,textAlign:"left",transition:"all 0.15s",display:"flex",alignItems:"center",gap:6}}>
+                <div style={{width:14,height:14,borderRadius:3,border:`1px solid ${active?T.blue:T.border2}`,background:active?T.blue:"none",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:"white"}}>{active&&"✓"}</div>
+                {s}
+              </button>;
+            })}
+          </div>
+        </div>
+        <div>
+          <div style={{fontSize:13,fontWeight:500,color:T.offWhite,marginBottom:8}}>Monthly Revenue Range <span style={{color:T.red}}>*</span></div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}} className="grid-2-mobile">
+            {REVENUE_BANDS.map(r=>(
+              <button key={r} onClick={()=>set("monthly_revenue")(r)} style={{padding:"10px 12px",borderRadius:8,border:`1px solid ${form.monthly_revenue===r?T.blue:T.border2}`,background:form.monthly_revenue===r?"rgba(37,99,235,0.12)":"none",color:form.monthly_revenue===r?T.white:T.offWhite,cursor:"pointer",fontSize:12,textAlign:"left",transition:"all 0.15s"}}>
+                {form.monthly_revenue===r?"● ":"○ "}{r}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    },
+    {
+      title:"Why Streamline?",
+      sub:"Tell us what you're looking to get out of this — helps us qualify the fit",
+      valid:form.why_interested.trim().length>20,
+      body:<div style={{display:"flex",flexDirection:"column",gap:14}}>
+        <Inp label="What's your biggest challenge with lead generation right now, and what made you reach out to Streamline?" value={form.why_interested} onChange={set("why_interested")} type="textarea" placeholder="e.g. We're spending $800/month on HomeAdvisor and closing maybe 1 in 10 leads. Half the time we're racing against 4 other contractors for the same job…" required hint="Be specific — this helps us tailor our pitch to your situation"/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}} className="grid-1-mobile">
+          <Inp label="Instagram (optional)" value={form.social_instagram} onChange={set("social_instagram")} placeholder="@apexclimate"/>
+          <Inp label="Facebook (optional)" value={form.social_facebook} onChange={set("social_facebook")} placeholder="facebook.com/apexclimate"/>
+        </div>
+        <Inp label="Other social / Google Business / Yelp (optional)" value={form.social_other} onChange={set("social_other")} placeholder="Any other online presence"/>
+      </div>
+    },
+  ];
+
+  const cur=STEPS[step];
+  const progress=((step)/STEPS.length)*100;
+
+  const handleSubmit=async()=>{
+    setSubmitting(true);setError("");
+    try{
+      const application={
+        contact_name:form.contact_name,
+        company:form.company,
+        email:form.email,
+        phone:form.phone,
+        city:form.city,
+        website:form.website,
+        industry:form.industry==="Other"?form.other_industry:form.industry,
+        years_in_business:form.years_in_business,
+        team_size:form.team_size,
+        current_lead_sources:form.current_lead_sources.join(", "),
+        monthly_revenue:form.monthly_revenue,
+        why_interested:form.why_interested,
+        social_instagram:form.social_instagram,
+        social_facebook:form.social_facebook,
+        social_other:form.social_other,
+        stage:"new",
+        created_at:new Date().toISOString(),
+      };
+      await db.submitApplication(application);
+      setDone(true);
+    }catch(e){
+      setError("Something went wrong. Please try again or email hello@streamline.io");
+      console.error(e);
+    }
+    setSubmitting(false);
+  };
+
+  if(done)return(
+    <div style={{minHeight:"100vh",background:T.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{textAlign:"center",maxWidth:500,width:"100%",animation:"fadeUp 0.5s ease"}}>
+        <div style={{width:72,height:72,borderRadius:"50%",background:"rgba(16,185,129,0.12)",border:`2px solid ${T.green}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:32,margin:"0 auto 20px"}}>✓</div>
+        <h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:"clamp(26px,5vw,38px)",letterSpacing:-1.5,marginBottom:14}}>Application received.</h2>
+        <p style={{color:T.offWhite,fontSize:15,lineHeight:1.8,marginBottom:8}}>Thanks, <strong>{form.contact_name}</strong>. We'll review your application and reach out to <strong>{form.email}</strong> within 1–2 business days.</p>
+        <p style={{color:T.muted,fontSize:13,lineHeight:1.7,marginBottom:32}}>In the meantime, feel free to explore how the platform works — you've already seen more than most contractors ever do before signing up.</p>
+        <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:14,padding:20,textAlign:"left",marginBottom:24}}>
+          <div style={{fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:12}}>Your application summary</div>
+          {[
+            ["Company",form.company],
+            ["Trade",form.industry==="Other"?form.other_industry:form.industry],
+            ["City",form.city],
+            ["Team size",form.team_size],
+            ["Monthly revenue",form.monthly_revenue],
+          ].map(([k,v])=>v&&<div key={k} style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:8}}>
+            <span style={{color:T.muted}}>{k}</span>
+            <span style={{color:T.white,fontWeight:500}}>{v}</span>
+          </div>)}
+        </div>
+        <Btn variant="outline" onClick={onBack} fullWidth>← Back to Streamline</Btn>
+      </div>
+    </div>
+  );
+
+  return(
+    <div style={{minHeight:"100vh",background:T.bg,display:"flex",flexDirection:"column"}}>
+      {/* Header */}
+      <div style={{height:56,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 20px",borderBottom:`1px solid ${T.border}`,background:"rgba(9,12,17,0.97)",backdropFilter:"blur(16px)",position:"sticky",top:0,zIndex:100}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}} onClick={onBack}>
+          <LogoMark size={26}/>
+          <span style={{fontFamily:"'DM Serif Display',serif",fontSize:16}}>Streamline</span>
+        </div>
+        <div style={{fontSize:12,color:T.muted}}>Contractor Application · Step {step+1} of {STEPS.length}</div>
+        <button onClick={onBack} style={{background:"none",border:"none",color:T.muted,cursor:"pointer",fontSize:13,padding:"6px 10px"}}>← Back</button>
+      </div>
+
+      {/* Progress bar */}
+      <div style={{height:3,background:T.border}}>
+        <div style={{height:"100%",width:`${progress+25}%`,background:`linear-gradient(90deg,${T.blue},${T.cyan})`,transition:"width 0.4s ease"}}/>
+      </div>
+
+      <div style={{flex:1,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"40px 20px 60px"}}>
+        <div style={{width:"100%",maxWidth:680,animation:"fadeUp 0.3s ease"}} key={step}>
+          {/* Step header */}
+          <div style={{marginBottom:28}}>
+            <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.blueL,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:8}}>Step {step+1} of {STEPS.length}</div>
+            <h1 style={{fontFamily:"'DM Serif Display',serif",fontSize:"clamp(22px,4vw,32px)",letterSpacing:-1,lineHeight:1.15,marginBottom:6}}>{cur.title}</h1>
+            <p style={{color:T.muted,fontSize:14}}>{cur.sub}</p>
+          </div>
+
+          {/* Step content */}
+          <div style={{marginBottom:28}}>{cur.body}</div>
+
+          {/* Error */}
+          {error&&<div style={{marginBottom:16,padding:"12px 16px",background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.25)",borderRadius:10,fontSize:13,color:"#F87171"}}>{error}</div>}
+
+          {/* Nav buttons */}
+          <div style={{display:"flex",gap:10}}>
+            {step>0&&<Btn variant="outline" onClick={()=>{setStep(s=>s-1);setError("");}} style={{flex:1}}>← Back</Btn>}
+            {step<STEPS.length-1
+              ?<Btn onClick={()=>{if(cur.valid){setStep(s=>s+1);setError("");}else setError("Please fill in all required fields before continuing.");}} disabled={!cur.valid} style={{flex:2}}>Continue →</Btn>
+              :<Btn onClick={handleSubmit} disabled={submitting||!cur.valid} style={{flex:2}}>
+                {submitting?<span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><Spinner size={15}/>Submitting…</span>:"Submit Application →"}
+              </Btn>
+            }
+          </div>
+
+          {/* Trust signals */}
+          <div style={{marginTop:20,display:"flex",alignItems:"center",justifyContent:"center",gap:16,flexWrap:"wrap"}}>
+            <span style={{fontSize:11,color:T.muted,display:"flex",alignItems:"center",gap:4}}>🔒 Your info is private</span>
+            <span style={{fontSize:11,color:T.muted,display:"flex",alignItems:"center",gap:4}}>📞 We'll reach out within 1–2 days</span>
+            <span style={{fontSize:11,color:T.muted,display:"flex",alignItems:"center",gap:4}}>✓ No commitment required</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── LANDING PAGE ─────────────────────────────────────────────────────────────
 function LandingFAQ(){
   const [open,setOpen]=useState(0);
@@ -1279,7 +1726,7 @@ function LandingFAQ(){
   </div>;
 }
 
-function LandingPage({onLogin,onIntakeForm}){
+function LandingPage({onLogin,onIntakeForm,onApply}){
   const [showAuth,setShowAuth]=useState(false);
   const [mobileNav,setMobileNav]=useState(false);
   const scrollTo=id=>{document.getElementById(id)?.scrollIntoView({behavior:"smooth"});setMobileNav(false);};
@@ -1310,7 +1757,7 @@ function LandingPage({onLogin,onIntakeForm}){
     {mobileNav&&<div style={{position:"fixed",top:60,left:0,right:0,background:T.surface,borderBottom:`1px solid ${T.border}`,zIndex:199,padding:"8px 0",animation:"fadeUp 0.2s ease"}}>
       {navLinks.map(([id,label])=><button key={id} onClick={()=>scrollTo(id)} style={{display:"block",width:"100%",background:"none",border:"none",cursor:"pointer",fontSize:15,fontWeight:500,color:T.offWhite,padding:"13px 20px",textAlign:"left"}}>{label}</button>)}
       <div style={{padding:"10px 16px",borderTop:`1px solid ${T.border}`,marginTop:4}}>
-        <Btn onClick={()=>{setShowAuth(true);setMobileNav(false);}} fullWidth>Get Started</Btn>
+        <Btn onClick={()=>{onApply();setMobileNav(false);}} fullWidth>Get Started</Btn>
       </div>
     </div>}
 
@@ -1329,7 +1776,7 @@ function LandingPage({onLogin,onIntakeForm}){
           Qualified, scored leads delivered to your dashboard. <em style={{color:T.cyan,fontStyle:"italic"}}>Exclusive.</em> Always.
         </p>
         <div style={{display:"flex",gap:12,justifyContent:"center",flexWrap:"wrap",marginBottom:22}}>
-          <Btn size="lg" onClick={()=>setShowAuth(true)}>Get Started →</Btn>
+          <Btn size="lg" onClick={onApply}>Get Started →</Btn>
           <Btn variant="outline" size="lg" onClick={()=>onIntakeForm("hvac")}>Try the Intake Form</Btn>
         </div>
         <div style={{display:"flex",justifyContent:"center",gap:8,flexWrap:"wrap"}}>
@@ -1448,7 +1895,8 @@ function LandingPage({onLogin,onIntakeForm}){
               <div style={{display:"flex",flexDirection:"column",gap:9,marginBottom:24}}>
                 {p.features.map(f=><div key={f} style={{display:"flex",alignItems:"flex-start",gap:8,fontSize:13,color:T.offWhite}}><span style={{color:T.blueL,flexShrink:0}}>›</span>{f}</div>)}
               </div>
-              <button onClick={()=>setShowAuth(true)} style={{width:"100%",padding:"12px",borderRadius:10,fontSize:14,fontWeight:600,cursor:"pointer",background:p.popular?T.blue:"none",color:p.popular?"white":T.offWhite,border:p.popular?"none":`1px solid ${T.border2}`,transition:"all 0.2s",touchAction:"manipulation"}}>Get Started</button>
+              <button onClick={onApply} style={{width:"100%",padding:"12px",borderRadius:10,fontSize:14,fontWeight:600,cursor:"pointer",background:p.popular?T.blue:"none",color:p.popular?"white":T.offWhite,border:p.popular?"none":`1px solid ${T.border2}`,transition:"all 0.2s",touchAction:"manipulation"}}>Get Started</button>
+              <div style={{fontSize:10,color:T.muted,textAlign:"center",marginTop:6}}>Secure payment via Stripe · Cancel anytime</div>
             </div>
           ))}
         </div>
@@ -1491,8 +1939,8 @@ function LandingPage({onLogin,onIntakeForm}){
         <h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:"clamp(26px,4vw,44px)",lineHeight:1.1,letterSpacing:-1.5,marginBottom:14}}>Ready to fill your calendar with real jobs?</h2>
         <p style={{fontSize:14,color:T.offWhite,marginBottom:28,fontWeight:300}}>Join service businesses across Columbus with a qualified, exclusive pipeline.</p>
         <div style={{display:"flex",justifyContent:"center",gap:10,flexWrap:"wrap"}}>
-          <Btn size="lg" onClick={()=>setShowAuth(true)}>Get Started →</Btn>
-          <Btn variant="outline" size="lg" onClick={()=>setShowAuth(true)}>See a Demo</Btn>
+          <Btn size="lg" onClick={onApply}>Get Started →</Btn>
+          <Btn variant="outline" size="lg" onClick={onApply}>See a Demo</Btn>
         </div>
       </div>
     </section>
@@ -1624,6 +2072,10 @@ function ContractorModal({ contractor, onClose, onSave, toast }) {
     notify_email: contractor?.notify_email || "",
     notes: contractor?.notes || "",
     id: contractor?.id || "",
+    stripe_customer_id: contractor?.stripe_customer_id || "",
+    billing_status: contractor?.billing_status || "active",
+    card_last4: contractor?.card_last4 || "",
+    card_brand: contractor?.card_brand || "",
   });
   const [saving, setSaving] = useState(false);
   const set = k => v => setForm(f => ({ ...f, [k]: v }));
@@ -1664,6 +2116,10 @@ function ContractorModal({ contractor, onClose, onSave, toast }) {
           calendly_url: form.calendly_url,
           notify_email: form.notify_email,
           notes: form.notes,
+          stripe_customer_id: form.stripe_customer_id||undefined,
+          billing_status: form.billing_status||"active",
+          card_last4: form.card_last4||undefined,
+          card_brand: form.card_brand||undefined,
         });
         toast({ message: "Contractor updated", type: "success" });
         onSave();
@@ -1697,6 +2153,16 @@ function ContractorModal({ contractor, onClose, onSave, toast }) {
         </div>
         <Inp label="Calendly URL" value={form.calendly_url} onChange={set("calendly_url")} placeholder="https://calendly.com/contractorname/estimate" hint="Qualified leads will see this booking link after submitting the intake form" />
         <Inp label="Internal Notes" value={form.notes} onChange={set("notes")} type="textarea" placeholder="Onboarding notes, special agreements, contact history…" />
+        {!isNew&&<div style={{background:"rgba(16,185,129,0.06)",border:"1px solid rgba(16,185,129,0.2)",borderRadius:10,padding:"12px 14px"}}>
+          <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Billing Override</div>
+          <div style={{fontSize:12,color:T.muted,marginBottom:10}}>Use these fields to manually record Stripe billing info until the full webhook integration is live.</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <Inp label="Stripe Customer ID" value={form.stripe_customer_id||""} onChange={set("stripe_customer_id")} placeholder="cus_xxxxxxxxxxxxx"/>
+            <Inp label="Billing Status" value={form.billing_status||"active"} onChange={set("billing_status")} type="select" options={[{value:"active",label:"Active"},{value:"trial",label:"Trial"},{value:"cancel_pending",label:"Cancel Pending"},{value:"cancelled",label:"Cancelled"},{value:"past_due",label:"Past Due"}]}/>
+            <Inp label="Card Last 4" value={form.card_last4||""} onChange={set("card_last4")} placeholder="4242"/>
+            <Inp label="Card Brand" value={form.card_brand||""} onChange={set("card_brand")} placeholder="Visa"/>
+          </div>
+        </div>}
         <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
           <Btn variant="outline" onClick={onClose} style={{ flex: 1 }}>Cancel</Btn>
           <Btn onClick={save} disabled={saving} style={{ flex: 2 }}>
@@ -1708,6 +2174,664 @@ function ContractorModal({ contractor, onClose, onSave, toast }) {
   );
 }
 
+
+
+// ─── CONTRACTOR CRM PIPELINE ──────────────────────────────────────────────────
+const CRM_STAGES=[
+  {id:"new",      label:"New Application", color:T.blueL,  icon:"📥", desc:"Just came in"},
+  {id:"reviewed", label:"Reviewed",        color:T.cyan,   icon:"👀", desc:"You've looked at it"},
+  {id:"call",     label:"Call Scheduled",  color:"#A78BFA",icon:"📞", desc:"Demo booked"},
+  {id:"trial",    label:"Trial",           color:T.amber,  icon:"🧪", desc:"Testing the platform"},
+  {id:"customer", label:"Customer",        color:T.green,  icon:"✅", desc:"Paying contractor"},
+  {id:"churned",  label:"Churned",         color:T.red,    icon:"❌", desc:"Left or didn't convert"},
+];
+
+function ApplicationDetail({app,onClose,onStageChange,onDelete,contractors,toast}){
+  const [stage,setStage]=useState(app.stage||"new");
+  const [notes,setNotes]=useState(app.admin_notes||"");
+  const [saving,setSaving]=useState(false);
+  const [converting,setConverting]=useState(false);
+  const stageInfo=CRM_STAGES.find(s=>s.id===stage)||CRM_STAGES[0];
+
+  const save=async(newStage)=>{
+    const s=newStage||stage;
+    setSaving(true);
+    try{
+      await db.updateApplicationStage(app.id,s,notes);
+      onStageChange(app.id,s,notes);
+      toast({message:"Saved",type:"success"});
+    }catch(e){toast({message:"Save failed",type:"error"});}
+    setSaving(false);
+  };
+
+  const convertToContractor=async()=>{
+    setConverting(true);
+    try{
+      // Check not already a contractor
+      const existing=contractors.find(c=>c.email===app.email);
+      if(existing){toast({message:"Already a contractor account",type:"info"});setConverting(false);return;}
+      // Create auth + business profile
+      const tempPw="Streamline2024!";
+      const{data,error}=await sb.auth.signUp({email:app.email,password:tempPw});
+      if(error)throw error;
+      const uid=data.user?.id;
+      if(!uid)throw new Error("Failed to create account");
+      await dbAdmin.upsertContractorProfile({
+        id:uid,email:app.email,company:app.company,
+        phone:app.phone,city:app.city,industry:app.industry,
+        plan:"Starter",notify_email:app.email,
+        notes:`Converted from application. ${app.why_interested||""}`,
+      });
+      await db.updateApplicationStage(app.id,"customer",notes);
+      onStageChange(app.id,"customer",notes);
+      toast({message:`✅ ${app.company} converted to contractor! Temp password: ${tempPw}`,type:"success"});
+      onClose();
+    }catch(e){toast({message:e.message||"Conversion failed",type:"error"});}
+    setConverting(false);
+  };
+
+  return(
+    <Modal open={true} onClose={onClose} title={app.company||app.contact_name} width={620}>
+      <div style={{display:"flex",flexDirection:"column",gap:16}}>
+        {/* Stage selector */}
+        <div>
+          <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:10}}>Pipeline Stage</div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {CRM_STAGES.map(s=>(
+              <button key={s.id} onClick={()=>{setStage(s.id);save(s.id);}} style={{padding:"6px 12px",borderRadius:8,border:`1px solid ${stage===s.id?s.color:T.border2}`,background:stage===s.id?s.color+"22":"none",color:stage===s.id?s.color:T.muted,cursor:"pointer",fontSize:12,fontWeight:stage===s.id?700:400,transition:"all 0.15s",display:"flex",alignItems:"center",gap:5}}>
+                {s.icon} {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Application details */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          {[
+            ["Contact",app.contact_name],["Email",app.email],
+            ["Phone",app.phone],["City",app.city],
+            ["Industry",app.industry],["Team Size",app.team_size],
+            ["Years in Business",app.years_in_business],["Monthly Revenue",app.monthly_revenue],
+            ["Website",app.website],["Applied",new Date(app.created_at).toLocaleDateString()],
+          ].filter(([,v])=>v).map(([k,v])=>(
+            <div key={k} style={{background:T.surface2,borderRadius:8,padding:"10px 12px"}}>
+              <div style={{fontSize:10,color:T.muted,fontFamily:"'JetBrains Mono',monospace",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:3}}>{k}</div>
+              <div style={{fontSize:13,color:T.white,fontWeight:500,wordBreak:"break-all"}}>{v}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Lead sources */}
+        {app.current_lead_sources&&<div style={{background:T.surface2,borderRadius:8,padding:"10px 12px"}}>
+          <div style={{fontSize:10,color:T.muted,fontFamily:"'JetBrains Mono',monospace",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Current Lead Sources</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+            {app.current_lead_sources.split(", ").map(s=>(
+              <span key={s} style={{background:T.surface3,border:`1px solid ${T.border2}`,borderRadius:4,padding:"2px 8px",fontSize:11,color:T.offWhite}}>{s}</span>
+            ))}
+          </div>
+        </div>}
+
+        {/* Why interested */}
+        {app.why_interested&&<div style={{background:T.surface2,borderRadius:8,padding:"12px 14px"}}>
+          <div style={{fontSize:10,color:T.muted,fontFamily:"'JetBrains Mono',monospace",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Why Streamline?</div>
+          <div style={{fontSize:13,color:T.offWhite,lineHeight:1.6}}>{app.why_interested}</div>
+        </div>}
+
+        {/* Social links */}
+        {(app.social_instagram||app.social_facebook||app.social_other)&&<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          {[["Instagram",app.social_instagram],["Facebook",app.social_facebook],["Other",app.social_other]].filter(([,v])=>v).map(([k,v])=>(
+            <a key={k} href={v.startsWith("http")?v:`https://${v}`} target="_blank" rel="noreferrer" style={{fontSize:12,color:T.blueL,background:"rgba(37,99,235,0.1)",border:"1px solid rgba(37,99,235,0.2)",borderRadius:6,padding:"4px 10px"}}>↗ {k}</a>
+          ))}
+        </div>}
+
+        {/* Admin notes */}
+        <div>
+          <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Admin Notes</div>
+          <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Call notes, objections, follow-up reminders…" style={{width:"100%",background:T.surface2,border:`1px solid ${T.border2}`,borderRadius:8,padding:"10px 12px",color:T.white,fontSize:13,outline:"none",minHeight:80,resize:"vertical",fontFamily:"inherit"}}/>
+        </div>
+
+        {/* Actions */}
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          <Btn onClick={()=>save()} disabled={saving} style={{flex:1}}>
+            {saving?"Saving…":"Save Notes"}
+          </Btn>
+          {stage!=="customer"&&stage!=="churned"&&(
+            <Btn variant="success" onClick={convertToContractor} disabled={converting} style={{flex:1}}>
+              {converting?<span style={{display:"flex",alignItems:"center",gap:6}}><Spinner size={13}/>Converting…</span>:"⚡ Convert to Contractor"}
+            </Btn>
+          )}
+          <Btn variant="danger" onClick={async()=>{if(window.confirm("Delete this application?"))try{await db.deleteApplication(app.id);onDelete(app.id);onClose();}catch(e){toast({message:"Delete failed",type:"error"});}}} style={{padding:"13px 16px"}}>🗑</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function ContractorCRM({contractors,toast}){
+  const [apps,setApps]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [selected,setSelected]=useState(null);
+  const [search,setSearch]=useState("");
+  const [stageFilter,setStageFilter]=useState("all");
+
+  const load=async()=>{
+    setLoading(true);
+    try{const d=await db.getApplications();setApps(d);}
+    catch(e){toast({message:"Failed to load applications",type:"error"});}
+    setLoading(false);
+  };
+  useEffect(()=>{load();},[]);
+
+  const updateStage=(id,stage,notes)=>{
+    setApps(p=>p.map(a=>a.id===id?{...a,stage,admin_notes:notes}:a));
+  };
+  const deleteApp=(id)=>setApps(p=>p.filter(a=>a.id!==id));
+
+  const filtered=apps
+    .filter(a=>stageFilter==="all"||a.stage===stageFilter)
+    .filter(a=>!search||
+      a.company?.toLowerCase().includes(search.toLowerCase())||
+      a.contact_name?.toLowerCase().includes(search.toLowerCase())||
+      a.city?.toLowerCase().includes(search.toLowerCase())||
+      a.industry?.toLowerCase().includes(search.toLowerCase())
+    );
+
+  // Stage counts
+  const counts={};
+  CRM_STAGES.forEach(s=>{counts[s.id]=apps.filter(a=>a.stage===s.id).length;});
+  const conversionRate=apps.length>0?Math.round((counts.customer/apps.length)*100):0;
+
+  return(
+    <div style={{animation:"fadeIn 0.3s ease"}}>
+      {/* Header */}
+      <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:12}}>
+        <div>
+          <h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:26,letterSpacing:-1,marginBottom:3}}>Contractor Pipeline</h2>
+          <p style={{color:T.muted,fontSize:13}}>{apps.length} applications · {counts.customer||0} customers · {conversionRate}% conversion rate</p>
+        </div>
+        <Btn variant="outline" onClick={load}>Refresh</Btn>
+      </div>
+
+      {/* Funnel summary */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8,marginBottom:20}} className="grid-2-mobile">
+        {CRM_STAGES.map(s=>(
+          <div key={s.id} onClick={()=>setStageFilter(stageFilter===s.id?"all":s.id)} style={{background:stageFilter===s.id?s.color+"18":T.surface,border:`1px solid ${stageFilter===s.id?s.color:T.border2}`,borderRadius:12,padding:"12px 14px",cursor:"pointer",transition:"all 0.15s"}}>
+            <div style={{fontSize:18,marginBottom:4}}>{s.icon}</div>
+            <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:22,fontWeight:700,color:s.color,lineHeight:1,marginBottom:2}}>{counts[s.id]||0}</div>
+            <div style={{fontSize:11,color:T.muted,lineHeight:1.3}}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Funnel bar */}
+      <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:12,padding:"14px 16px",marginBottom:16,display:"flex",gap:3,alignItems:"center",overflow:"hidden"}}>
+        {CRM_STAGES.filter(s=>s.id!=="churned").map((s,i,arr)=>{
+          const w=apps.length>0?Math.max((counts[s.id]/apps.length)*100,2):0;
+          return<div key={s.id} style={{flex:counts[s.id]||0.2,height:8,background:s.color,borderRadius:i===0?"4px 0 0 4px":i===arr.length-1?"0 4px 4px 0":"0",opacity:0.8,minWidth:4,transition:"flex 0.6s ease"}} title={`${s.label}: ${counts[s.id]||0}`}/>;
+        })}
+      </div>
+
+      {/* Search */}
+      <div style={{position:"relative",marginBottom:14,maxWidth:400}}>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search applications…" style={{width:"100%",background:T.surface,border:`1px solid ${T.border2}`,borderRadius:8,padding:"9px 12px 9px 32px",color:T.white,fontSize:13,outline:"none"}}/>
+        <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:T.muted,fontSize:12}}>🔍</span>
+      </div>
+
+      {/* Applications table */}
+      {loading?(
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:200,gap:12}}><Spinner/><span style={{color:T.muted}}>Loading applications…</span></div>
+      ):(
+        <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:14,overflow:"hidden"}}>
+          <div style={{display:"grid",gridTemplateColumns:"1.8fr 1fr 1fr 1fr 1fr 1.4fr 80px",padding:"10px 16px",borderBottom:`1px solid ${T.border}`,fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.07em"}}>
+            {["Applicant","Industry","City","Revenue","Team","Stage","Applied"].map(h=><div key={h}>{h}</div>)}
+          </div>
+          {filtered.length===0?(
+            <div style={{padding:56,textAlign:"center"}}>
+              <div style={{fontSize:28,marginBottom:10}}>📥</div>
+              <div style={{fontSize:14,color:T.offWhite,marginBottom:6}}>{apps.length===0?"No applications yet":"No results"}</div>
+              <div style={{fontSize:13,color:T.muted}}>{apps.length===0?"Applications from your website will appear here automatically.":"Try a different search or stage filter."}</div>
+            </div>
+          ):filtered.map((app,i)=>{
+            const s=CRM_STAGES.find(x=>x.id===app.stage)||CRM_STAGES[0];
+            return(
+              <div key={app.id} onClick={()=>setSelected(app)}
+                style={{display:"grid",gridTemplateColumns:"1.8fr 1fr 1fr 1fr 1fr 1.4fr 80px",padding:"13px 16px",borderBottom:i<filtered.length-1?`1px solid ${T.border}`:"none",cursor:"pointer",transition:"background 0.15s",alignItems:"center"}}
+                onMouseEnter={e=>e.currentTarget.style.background=T.surface2}
+                onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:600,color:T.white,marginBottom:1}}>{app.company||"—"}</div>
+                  <div style={{fontSize:11,color:T.muted}}>{app.contact_name} · {app.email}</div>
+                </div>
+                <div style={{fontSize:12,color:T.offWhite}}>{app.industry||"—"}</div>
+                <div style={{fontSize:12,color:T.offWhite}}>{app.city||"—"}</div>
+                <div style={{fontSize:12,color:T.offWhite}}>{app.monthly_revenue||"—"}</div>
+                <div style={{fontSize:12,color:T.offWhite}}>{app.team_size||"—"}</div>
+                <div><span style={{display:"inline-flex",alignItems:"center",gap:5,background:s.color+"20",color:s.color,border:`1px solid ${s.color}40`,borderRadius:6,padding:"3px 8px",fontSize:11,fontWeight:600}}>{s.icon} {s.label}</span></div>
+                <div style={{fontSize:11,color:T.muted}}>{new Date(app.created_at).toLocaleDateString()}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {selected&&<ApplicationDetail
+        app={selected}
+        onClose={()=>setSelected(null)}
+        onStageChange={(id,stage,notes)=>{updateStage(id,stage,notes);setSelected(s=>s?{...s,stage,admin_notes:notes}:null);}}
+        onDelete={deleteApp}
+        contractors={contractors}
+        toast={toast}
+      />}
+    </div>
+  );
+}
+
+
+
+function generateInvoicePDF(invoice, contractor, wonLeads) {
+  const perfFee = contractor.plan === "Growth" ? 100 : 150;
+  const lineItems = wonLeads.map(l => ({
+    date: l.completed_at ? new Date(l.completed_at).toLocaleDateString() : new Date(l.created_at).toLocaleDateString(),
+    customer: l.name,
+    issue: l.is_name || l.issue_type,
+    jobValue: l.job_value ? `$${Number(l.job_value).toLocaleString()}` : "Not recorded",
+    fee: `$${perfFee.toFixed(2)}`,
+  }));
+  const subtotal = wonLeads.length * perfFee;
+  const invoiceNum = invoice.invoice_number || `INV-${Date.now()}`;
+  const dueDate = new Date(Date.now() + 14*24*60*60*1000).toLocaleDateString();
+
+  const rows = lineItems.map(l =>
+    `<tr><td>${l.date}</td><td style="font-weight:500">${l.customer}</td><td style="color:#64748B">${l.issue}</td><td>${l.jobValue}</td><td style="text-align:right;font-weight:600">${l.fee}</td></tr>`
+  ).join("");
+
+  const statusBadge = invoice.status === "paid"
+    ? `<span style="background:#F0FDF4;color:#16A34A;border:1px solid #BBF7D0;border-radius:4px;padding:2px 10px;font-size:11px;font-weight:600">PAID</span>`
+    : `<span style="background:#EFF6FF;color:#2563EB;border:1px solid #BFDBFE;border-radius:4px;padding:2px 10px;font-size:11px;font-weight:600">OUTSTANDING</span>`;
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Invoice ${invoiceNum}</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;color:#111;padding:48px;}
+.header{display:flex;justify-content:space-between;margin-bottom:48px;}
+.logo{font-size:22px;font-weight:700;letter-spacing:-0.5px;}
+.logo span{color:#2563EB;}
+.parties{display:grid;grid-template-columns:1fr 1fr;gap:32px;margin-bottom:40px;padding:24px;background:#F8FAFC;border-radius:10px;border:1px solid #E2E8F0;}
+.label{font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:#94A3B8;margin-bottom:6px;font-weight:600;}
+.pname{font-size:15px;font-weight:700;margin-bottom:4px;}
+.pdetail{font-size:12px;color:#64748B;line-height:1.6;}
+.dates{display:flex;gap:32px;margin-bottom:32px;}
+.db label{font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:#94A3B8;font-weight:600;display:block;margin-bottom:3px;}
+.db span{font-size:13px;font-weight:600;}
+table{width:100%;border-collapse:collapse;margin-bottom:24px;}
+th{padding:10px 14px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:#64748B;background:#F1F5F9;font-weight:600;}
+td{padding:12px 14px;border-bottom:1px solid #F1F5F9;font-size:13px;}
+tr:last-child td{border-bottom:none;}
+.totals{margin-left:auto;width:260px;}
+.trow{display:flex;justify-content:space-between;padding:6px 0;font-size:13px;}
+.trow.total{border-top:2px solid #111;margin-top:8px;padding-top:12px;font-size:16px;font-weight:700;}
+.note{margin-top:40px;padding:16px 20px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;font-size:12px;color:#92400E;line-height:1.6;}
+.footer{margin-top:48px;padding-top:24px;border-top:1px solid #E2E8F0;display:flex;justify-content:space-between;font-size:11px;color:#94A3B8;}
+@media print{body{padding:32px;}}
+</style></head><body>
+<div class="header">
+  <div><div class="logo">Stream<span>line</span></div><div style="font-size:12px;color:#64748B;margin-top:4px">Performance Fee Invoice</div></div>
+  <div style="text-align:right"><div style="font-size:20px;font-weight:700;margin-bottom:4px">${invoiceNum}</div>${statusBadge}</div>
+</div>
+<div class="parties">
+  <div><div class="label">From</div><div class="pname">Streamline</div><div class="pdetail">hello@streamline.io<br/>streamline.io</div></div>
+  <div><div class="label">Bill To</div><div class="pname">${contractor.company || contractor.email}</div><div class="pdetail">${contractor.email}<br/>${contractor.phone||""}<br/>${contractor.city||""}</div></div>
+</div>
+<div class="dates">
+  <div class="db"><label>Invoice Date</label><span>${new Date(invoice.created_at||Date.now()).toLocaleDateString()}</span></div>
+  <div class="db"><label>Due Date</label><span>${dueDate}</span></div>
+  <div class="db"><label>Period</label><span>${invoice.period||new Date().toLocaleString("default",{month:"long",year:"numeric"})}</span></div>
+  <div class="db"><label>Plan</label><span>${contractor.plan||"Starter"} ($${perfFee}/close)</span></div>
+</div>
+<table>
+  <thead><tr><th>Date</th><th>Customer</th><th>Service</th><th>Job Value</th><th style="text-align:right">Performance Fee</th></tr></thead>
+  <tbody>${rows}</tbody>
+</table>
+<div class="totals">
+  <div class="trow"><span>${wonLeads.length} closed job${wonLeads.length!==1?"s":""} x $${perfFee}</span><span>$${subtotal.toFixed(2)}</span></div>
+  <div class="trow total"><span>Total Due</span><span>$${subtotal.toFixed(2)}</span></div>
+</div>
+<div class="note"><strong>Payment:</strong> ACH, check, or Stripe link provided separately. Reference <strong>${invoiceNum}</strong>. Questions? hello@streamline.io</div>
+<div class="footer"><span>Streamline | hello@streamline.io | streamline.io</span><span>Generated ${new Date().toLocaleString()}</span></div>
+</body></html>`;
+
+  const win = window.open("","_blank","width=900,height=700");
+  if(!win){alert("Please allow popups for this site to generate invoices.");return;}
+  win.document.write(html);
+  win.document.close();
+  setTimeout(()=>win.print(),600);
+}
+
+function AdminInvoicing({contractors,toast}){
+  const [wonLeads,setWonLeads]=useState([]);
+  const [invoices,setInvoices]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [selectedContractor,setSelectedContractor]=useState(null);
+  const [generating,setGenerating]=useState(false);
+
+  const load=async()=>{
+    setLoading(true);
+    try{
+      const[wl,inv]=await Promise.all([db.getAllWonLeads(),db.getAllInvoices()]);
+      setWonLeads(wl);setInvoices(inv);
+    }catch(e){toast({message:"Failed to load",type:"error"});}
+    setLoading(false);
+  };
+  useEffect(()=>{load();},[]);
+
+  const byContractor=contractors.map(c=>{
+    const leads=wonLeads.filter(l=>l.business_id===c.id);
+    const unbilled=leads.filter(l=>!l.billed);
+    const perfFee=c.plan==="Growth"?100:150;
+    return{...c,leads,unbilled,unbilledFee:unbilled.length*perfFee,perfFee,contractorInvoices:invoices.filter(i=>i.business_id===c.id)};
+  }).filter(c=>c.leads.length>0).sort((a,b)=>b.unbilled.length-a.unbilled.length);
+
+  const totalUnbilled=byContractor.reduce((s,c)=>s+c.unbilledFee,0);
+  const totalCollected=invoices.filter(i=>i.status==="paid").reduce((s,i)=>s+Number(i.total_amount||0),0);
+  const totalPending=invoices.filter(i=>i.status==="sent").reduce((s,i)=>s+Number(i.total_amount||0),0);
+
+  const generateInvoice=async(contractor)=>{
+    if(!contractor.unbilled.length){toast({message:"No unbilled jobs",type:"info"});return;}
+    setGenerating(true);
+    try{
+      const now=new Date();
+      const suffix=(contractor.company||"CONT").replace(/\s/g,"").substring(0,4).toUpperCase()+String(Math.floor(Math.random()*900)+100);
+      const invoiceNum=`INV-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}-${suffix}`;
+      const inv={business_id:contractor.id,invoice_number:invoiceNum,period:now.toLocaleString("default",{month:"long",year:"numeric"}),line_item_count:contractor.unbilled.length,perf_fee_per_job:contractor.perfFee,total_amount:contractor.unbilledFee,status:"sent",created_at:now.toISOString(),lead_ids:contractor.unbilled.map(l=>l.id).join(",")};
+      const saved=await db.createInvoice(inv);
+      await db.markLeadsBilled(contractor.unbilled.map(l=>l.id),saved.id);
+      generateInvoicePDF(saved,contractor,contractor.unbilled);
+      toast({message:`Invoice ${invoiceNum} generated — PDF opened`,type:"success"});
+      await load();
+    }catch(e){toast({message:"Failed: "+e.message,type:"error"});}
+    setGenerating(false);
+  };
+
+  const reprintInvoice=async(inv)=>{
+    const c=contractors.find(x=>x.id===inv.business_id);
+    if(!c){toast({message:"Contractor not found",type:"error"});return;}
+    const ids=(inv.lead_ids||"").split(",").filter(Boolean);
+    generateInvoicePDF(inv,c,wonLeads.filter(l=>ids.includes(l.id)));
+  };
+
+  return(
+    <div style={{animation:"fadeIn 0.3s ease"}}>
+      <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:12}}>
+        <div>
+          <h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:26,letterSpacing:-1,marginBottom:3}}>Invoicing</h2>
+          <p style={{color:T.muted,fontSize:13}}>Generate performance fee invoices for contractors with closed jobs</p>
+        </div>
+        <Btn variant="outline" onClick={load}>Refresh</Btn>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:20}} className="grid-2-mobile">
+        {[
+          {label:"Unbilled Fees",value:`$${totalUnbilled.toLocaleString()}`,color:T.amber,icon:"⏳"},
+          {label:"Awaiting Payment",value:`$${totalPending.toLocaleString()}`,color:"#A78BFA",icon:"📤"},
+          {label:"Collected",value:`$${totalCollected.toLocaleString()}`,color:T.green,icon:"💰"},
+          {label:"Invoices Sent",value:invoices.length,color:T.blueL,icon:"🧾"},
+        ].map(s=>(
+          <div key={s.label} style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:12,padding:"14px 16px"}}>
+            <div style={{fontSize:18,marginBottom:6}}>{s.icon}</div>
+            <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:22,fontWeight:700,color:s.color,lineHeight:1,marginBottom:3}}>{s.value}</div>
+            <div style={{fontSize:11,color:T.muted}}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {loading?(
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:200,gap:12}}><Spinner/><span style={{color:T.muted}}>Loading won jobs…</span></div>
+      ):(
+        <>
+          <div style={{marginBottom:20}}>
+            <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:10}}>
+              Contractors — {byContractor.filter(c=>c.unbilled.length>0).length} need invoicing
+            </div>
+            <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:14,overflow:"hidden"}}>
+              <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 1fr 140px",padding:"10px 16px",borderBottom:`1px solid ${T.border}`,fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.07em"}}>
+                {["Contractor","Plan","Won Jobs","Unbilled","Fee/Job","Unbilled Fees",""].map(h=><div key={h}>{h}</div>)}
+              </div>
+              {byContractor.length===0?(
+                <div style={{padding:48,textAlign:"center"}}>
+                  <div style={{fontSize:28,marginBottom:10}}>🎉</div>
+                  <div style={{fontSize:14,color:T.offWhite,marginBottom:6}}>All caught up</div>
+                  <div style={{fontSize:13,color:T.muted}}>No unbilled won jobs right now.</div>
+                </div>
+              ):byContractor.map((c,i,arr)=>(
+                <div key={c.id}>
+                  <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 1fr 140px",padding:"13px 16px",borderBottom:`1px solid ${T.border}`,alignItems:"center"}}>
+                    <div>
+                      <div style={{fontSize:13,fontWeight:600}}>{c.company||c.email}</div>
+                      <div style={{fontSize:11,color:T.muted}}>{c.city} · {c.email}</div>
+                    </div>
+                    <div><Pill color={c.plan==="Growth"?"won":"new"}>{c.plan||"Starter"}</Pill></div>
+                    <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:13,color:T.blueL}}>{c.leads.length}</div>
+                    <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:13,color:c.unbilled.length>0?T.amber:T.muted}}>{c.unbilled.length}</div>
+                    <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:T.muted}}>${c.perfFee}</div>
+                    <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:14,fontWeight:700,color:c.unbilledFee>0?T.amber:T.muted}}>{c.unbilledFee>0?`$${c.unbilledFee.toLocaleString()}`:"-"}</div>
+                    <div style={{display:"flex",gap:6}}>
+                      {c.unbilled.length>0&&(
+                        <button onClick={()=>generateInvoice(c)} disabled={generating} style={{background:`linear-gradient(135deg,${T.blue},#7C3AED)`,border:"none",borderRadius:8,padding:"7px 12px",cursor:"pointer",color:"white",fontSize:12,fontWeight:600,display:"flex",alignItems:"center",gap:5,opacity:generating?0.6:1}}>
+                          {generating?<Spinner size={11}/>:"🧾"} Invoice
+                        </button>
+                      )}
+                      <button onClick={()=>setSelectedContractor(selectedContractor?.id===c.id?null:c)} style={{background:"none",border:`1px solid ${T.border2}`,borderRadius:8,padding:"7px 10px",cursor:"pointer",color:T.muted,fontSize:12}}>
+                        {selectedContractor?.id===c.id?"▲":"▼"}
+                      </button>
+                    </div>
+                  </div>
+                  {selectedContractor?.id===c.id&&(
+                    <div style={{background:T.surface2}}>
+                      <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 1fr 140px",padding:"8px 16px",borderBottom:`1px solid ${T.border}`,fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.06em"}}>
+                        {["Customer","Service","Completed","Job Value","Perf Fee","Status",""].map(h=><div key={h}>{h}</div>)}
+                      </div>
+                      {c.leads.map((l,li)=>(
+                        <div key={l.id} style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 1fr 140px",padding:"10px 16px",borderBottom:li<c.leads.length-1?`1px solid ${T.border}`:"none",alignItems:"center",fontSize:12}}>
+                          <div style={{fontWeight:500,color:T.offWhite,paddingLeft:8}}>{l.name}</div>
+                          <div style={{color:T.muted}}>{l.is_name||l.issue_type}</div>
+                          <div style={{color:T.muted}}>{l.completed_at?new Date(l.completed_at).toLocaleDateString():"—"}</div>
+                          <div style={{fontFamily:"'JetBrains Mono',monospace",color:l.job_value?T.green:T.muted}}>{l.job_value?`$${Number(l.job_value).toLocaleString()}`:"—"}</div>
+                          <div style={{fontFamily:"'JetBrains Mono',monospace",color:T.amber}}>${c.perfFee}</div>
+                          <div>{l.billed?<span style={{fontSize:10,background:"rgba(245,158,11,0.12)",color:T.amber,border:"1px solid rgba(245,158,11,0.25)",borderRadius:4,padding:"2px 7px",fontWeight:600}}>Billed</span>:<span style={{fontSize:10,background:"rgba(16,185,129,0.1)",color:T.green,border:"1px solid rgba(16,185,129,0.25)",borderRadius:4,padding:"2px 7px",fontWeight:600}}>Unbilled</span>}</div>
+                          <div/>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {invoices.length>0&&(
+            <div>
+              <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:10}}>Invoice History</div>
+              <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:14,overflow:"hidden"}}>
+                <div style={{display:"grid",gridTemplateColumns:"1.5fr 1.2fr 1.2fr 80px 1fr 90px 120px",padding:"10px 16px",borderBottom:`1px solid ${T.border}`,fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.07em"}}>
+                  {["Invoice #","Contractor","Period","Jobs","Amount","Status",""].map(h=><div key={h}>{h}</div>)}
+                </div>
+                {invoices.map((inv,i)=>{
+                  const c=contractors.find(x=>x.id===inv.business_id);
+                  const paid=inv.status==="paid";
+                  return(
+                    <div key={inv.id} style={{display:"grid",gridTemplateColumns:"1.5fr 1.2fr 1.2fr 80px 1fr 90px 120px",padding:"12px 16px",borderBottom:i<invoices.length-1?`1px solid ${T.border}`:"none",alignItems:"center"}}>
+                      <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:T.blueL,fontWeight:600}}>{inv.invoice_number}</div>
+                      <div style={{fontSize:12}}>{c?.company||"—"}</div>
+                      <div style={{fontSize:12,color:T.muted}}>{inv.period}</div>
+                      <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:T.muted}}>{inv.line_item_count}</div>
+                      <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:13,fontWeight:700,color:paid?T.green:T.amber}}>${Number(inv.total_amount||0).toLocaleString()}</div>
+                      <div><span style={{fontSize:10,background:paid?"rgba(16,185,129,0.1)":"rgba(245,158,11,0.1)",color:paid?T.green:T.amber,border:`1px solid ${paid?"rgba(16,185,129,0.25)":"rgba(245,158,11,0.25)"}`,borderRadius:4,padding:"2px 7px",fontWeight:600,textTransform:"uppercase"}}>{inv.status}</span></div>
+                      <div style={{display:"flex",gap:4}}>
+                        <button onClick={()=>reprintInvoice(inv)} style={{background:"none",border:`1px solid ${T.border2}`,borderRadius:6,padding:"4px 8px",cursor:"pointer",color:T.muted,fontSize:11}}>Print</button>
+                        {!paid&&<button onClick={async()=>{try{await db.markInvoicePaid(inv.id);toast({message:"Marked paid",type:"success"});load();}catch(e){toast({message:"Failed",type:"error"});}}} style={{background:"none",border:"1px solid rgba(16,185,129,0.3)",borderRadius:6,padding:"4px 8px",cursor:"pointer",color:T.green,fontSize:11}}>Paid</button>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── ADMIN BILLING VIEW ───────────────────────────────────────────────────────
+function AdminBillingView({contractors,allBilling,onRefresh,toast}){
+  const STRIPE_DASHBOARD = "https://dashboard.stripe.com";
+
+  // Merge billing data with contractor profiles
+  const merged = contractors.map(c=>{
+    const b = allBilling.find(x=>x.business_id===c.id)||{};
+    return{...c,...b};
+  });
+
+  const active        = merged.filter(c=>!c.billing_status||c.billing_status==="active");
+  const cancelPending = merged.filter(c=>c.billing_status==="cancel_pending");
+  const pastDue       = merged.filter(c=>c.billing_status==="past_due");
+  const cancelled     = merged.filter(c=>c.billing_status==="cancelled");
+  const trial         = merged.filter(c=>c.billing_status==="trial");
+
+  const mrr = active.reduce((s,c)=>s+(c.plan==="Growth"?499:299),0)
+            + trial.reduce((s,c)=>s+(c.plan==="Growth"?499:299),0)*0.5; // trial at 50%
+
+  const BillingRow=({c,showActions=true})=>{
+    const statusConfig={
+      active:{color:T.green,label:"Active"},
+      cancel_pending:{color:T.amber,label:"Cancel Pending"},
+      cancelled:{color:T.red,label:"Cancelled"},
+      trial:{color:T.cyan,label:"Trial"},
+      past_due:{color:T.red,label:"Past Due"},
+    };
+    const s=statusConfig[c.billing_status||"active"]||statusConfig.active;
+    return(
+      <div style={{display:"grid",gridTemplateColumns:"1.8fr 1fr 1fr 1fr 1.4fr 1fr 80px",padding:"13px 16px",borderBottom:`1px solid ${T.border}`,alignItems:"center"}}
+        onMouseEnter={e=>e.currentTarget.style.background=T.surface2}
+        onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+        <div>
+          <div style={{fontSize:13,fontWeight:600}}>{c.company||c.email}</div>
+          <div style={{fontSize:11,color:T.muted}}>{c.email}</div>
+        </div>
+        <div><Pill color={c.plan==="Growth"?"won":"new"}>{c.plan||"Starter"}</Pill></div>
+        <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:13,color:T.blueL}}>${c.plan==="Growth"?"499":"299"}/mo</div>
+        <div style={{fontSize:12,color:T.offWhite}}>{c.card_last4?`${c.card_brand||"Card"} ····${c.card_last4}`:"No card"}</div>
+        <div><span style={{display:"inline-flex",alignItems:"center",background:s.color+"20",color:s.color,border:`1px solid ${s.color}40`,borderRadius:6,padding:"3px 8px",fontSize:11,fontWeight:600}}>{s.label}</span></div>
+        <div style={{fontSize:11,color:T.muted}}>{c.cancel_reason||"—"}</div>
+        {showActions&&<div style={{display:"flex",gap:4}}>
+          {c.stripe_customer_id&&<a href={`${STRIPE_DASHBOARD}/customers/${c.stripe_customer_id}`} target="_blank" rel="noreferrer" style={{background:"rgba(99,102,241,0.1)",border:"1px solid rgba(99,102,241,0.3)",borderRadius:6,padding:"4px 7px",fontSize:10,color:"#818CF8",textDecoration:"none",fontWeight:600}}>Stripe</a>}
+          {c.billing_status==="cancel_pending"&&<button onClick={async()=>{
+            try{await db.upsertBilling({business_id:c.id,status:"active",cancel_requested:false,cancel_reason:null});onRefresh();toast({message:"Cancellation reversed",type:"success"});}
+            catch(e){toast({message:"Failed",type:"error"});}
+          }} style={{background:"rgba(16,185,129,0.1)",border:`1px solid ${T.green}40`,borderRadius:6,padding:"4px 7px",cursor:"pointer",color:T.green,fontSize:10,fontWeight:600}}>Reactivate</button>}
+        </div>}
+      </div>
+    );
+  };
+
+  const TableHeader=()=>(
+    <div style={{display:"grid",gridTemplateColumns:"1.8fr 1fr 1fr 1fr 1.4fr 1fr 80px",padding:"10px 16px",borderBottom:`1px solid ${T.border}`,fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.07em"}}>
+      {["Contractor","Plan","MRR","Card","Status","Cancel Reason",""].map(h=><div key={h}>{h}</div>)}
+    </div>
+  );
+
+  return(
+    <div style={{animation:"fadeIn 0.3s ease"}}>
+      <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:12}}>
+        <div>
+          <h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:26,letterSpacing:-1,marginBottom:3}}>Billing</h2>
+          <p style={{color:T.muted,fontSize:13}}>Manage subscriptions, cancellation requests, and payment status</p>
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <a href={STRIPE_DASHBOARD} target="_blank" rel="noreferrer" style={{background:"rgba(99,102,241,0.12)",border:"1px solid rgba(99,102,241,0.3)",borderRadius:8,padding:"8px 16px",color:"#818CF8",fontSize:13,fontWeight:600,textDecoration:"none",display:"flex",alignItems:"center",gap:6}}>↗ Stripe Dashboard</a>
+          <Btn variant="outline" onClick={onRefresh}>Refresh</Btn>
+        </div>
+      </div>
+
+      {/* MRR + key stats */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:20}} className="grid-2-mobile">
+        {[
+          {label:"Est. MRR",value:`$${Math.round(mrr).toLocaleString()}`,color:T.green,icon:"💰"},
+          {label:"Active",value:active.length,color:T.blueL,icon:"✅"},
+          {label:"Trial",value:trial.length,color:T.cyan,icon:"🧪"},
+          {label:"Cancel Pending",value:cancelPending.length,color:T.amber,icon:"⏳"},
+          {label:"Past Due",value:pastDue.length,color:T.red,icon:"⚠️"},
+        ].map(s=>(
+          <div key={s.label} style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:12,padding:"14px 16px"}}>
+            <div style={{fontSize:18,marginBottom:6}}>{s.icon}</div>
+            <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:22,fontWeight:700,color:s.color,lineHeight:1,marginBottom:3}}>{s.value}</div>
+            <div style={{fontSize:11,color:T.muted}}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Cancellation requests — priority section */}
+      {cancelPending.length>0&&(
+        <div style={{marginBottom:16}}>
+          <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.amber,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:10,display:"flex",alignItems:"center",gap:8}}>
+            ⏳ Cancellation Requests — {cancelPending.length} pending
+          </div>
+          <div style={{background:T.surface,border:`1px solid rgba(245,158,11,0.3)`,borderRadius:14,overflow:"hidden"}}>
+            <TableHeader/>
+            {cancelPending.map(c=><BillingRow key={c.id} c={c}/>)}
+          </div>
+        </div>
+      )}
+
+      {/* Past due */}
+      {pastDue.length>0&&(
+        <div style={{marginBottom:16}}>
+          <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.red,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:10}}>⚠️ Past Due — {pastDue.length}</div>
+          <div style={{background:T.surface,border:`1px solid rgba(239,68,68,0.3)`,borderRadius:14,overflow:"hidden"}}>
+            <TableHeader/>
+            {pastDue.map(c=><BillingRow key={c.id} c={c}/>)}
+          </div>
+        </div>
+      )}
+
+      {/* Active subscribers */}
+      <div style={{marginBottom:16}}>
+        <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:10}}>Active Subscribers — {active.length}</div>
+        <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:14,overflow:"hidden"}}>
+          <TableHeader/>
+          {active.length===0
+            ?<div style={{padding:32,textAlign:"center",color:T.muted,fontSize:13}}>No active subscribers yet</div>
+            :active.map(c=><BillingRow key={c.id} c={c}/>)
+          }
+        </div>
+      </div>
+
+      {/* Trial */}
+      {trial.length>0&&(
+        <div style={{marginBottom:16}}>
+          <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.cyan,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:10}}>Trial — {trial.length}</div>
+          <div style={{background:T.surface,border:`1px solid rgba(6,182,212,0.25)`,borderRadius:14,overflow:"hidden"}}>
+            <TableHeader/>
+            {trial.map(c=><BillingRow key={c.id} c={c}/>)}
+          </div>
+        </div>
+      )}
+
+      {/* Stripe setup notice */}
+      <div style={{background:"rgba(99,102,241,0.06)",border:"1px solid rgba(99,102,241,0.2)",borderRadius:12,padding:"16px 20px",display:"flex",gap:14,alignItems:"flex-start"}}>
+        <span style={{fontSize:22,flexShrink:0}}>🔌</span>
+        <div>
+          <div style={{fontSize:13,fontWeight:600,color:"#818CF8",marginBottom:4}}>Stripe Webhook Integration</div>
+          <div style={{fontSize:12,color:T.muted,lineHeight:1.7}}>
+            To auto-sync billing status from Stripe, deploy the Edge Function in <code style={{fontFamily:"'JetBrains Mono',monospace",color:T.offWhite,fontSize:11}}>/supabase/functions/stripe-webhook</code>.
+            Until then, use the Billing Override fields in each contractor's edit modal to manually sync status.
+            Card info, cancellations, and status changes from Stripe will then update here automatically.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── ADMIN STATS ──────────────────────────────────────────────────────────────
 function AdminStats({contractors}){
@@ -2161,7 +3285,8 @@ function AdminStats({contractors}){
             {[...contractorPerf,...contractors.filter(c=>!contractorPerf.find(p=>p.id===c.id)).map(c=>({...c,leads:0,won:0,closeRate:0,avgScore:0}))].map((c,i,arr)=>{
               const cap=c.plan==="Growth"?50:20;
               const capPct=Math.round((c.leads/cap)*100);
-              const status=c.leads===0?"😴 Inactive":capPct>=100?"🔴 At Cap":capPct>=80?"🟡 Near Cap":c.closeRate>=30?"🟢 Performing":"🔵 Active";
+              const billingFlag=c.billing_status==="cancel_pending"?"🟠 Cancel Pending":c.billing_status==="past_due"?"🔴 Past Due":c.billing_status==="cancelled"?"⚫ Cancelled":"";
+              const status=billingFlag||(c.leads===0?"😴 Inactive":capPct>=100?"🔴 At Cap":capPct>=80?"🟡 Near Cap":c.closeRate>=30?"🟢 Performing":"🔵 Active");
               return(
                 <tr key={c.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
                   <td style={{padding:"8px 8px",fontWeight:600,color:T.white,maxWidth:130,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.company||c.email}</td>
@@ -2205,6 +3330,15 @@ function AdminDashboard({ adminUser, onLogout }) {
   const [selectedLead, setSelectedLead] = useState(null);
   const [activeTab, setActiveTab] = useState("contractors");
   const [copiedId, setCopiedId] = useState(null);
+  const [apps, setApps] = useState([]);
+  const [cancelRequests, setCancelRequests] = useState(0);
+  const [allBilling, setAllBilling] = useState([]);
+
+  // Load application count + billing alerts for badges
+  useEffect(()=>{
+    db.getApplications().then(d=>setApps(d)).catch(()=>{});
+    db.getAllBilling().then(d=>{setAllBilling(d);setCancelRequests(d.filter(b=>b.status==="cancel_pending").length);}).catch(()=>{});
+  },[]);
   const [unassignedLeads, setUnassignedLeads] = useState([]);
   const [assigningLead, setAssigningLead] = useState(null);
   const [assignTarget, setAssignTarget] = useState("");
@@ -2364,7 +3498,14 @@ function AdminDashboard({ adminUser, onLogout }) {
           <span style={{ background: "rgba(239,68,68,0.15)", color: "#F87171", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 4, padding: "2px 8px", fontSize: 10, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", letterSpacing: "0.07em", marginLeft: 4 }}>ADMIN</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          {[{ id: "contractors", label: "Contractors", icon: "👥" }, { id: "unassigned", label: `Unassigned ${unassignedLeads.length > 0 ? "("+unassignedLeads.length+")" : ""}`, icon: "📥" }, { id: "overview", label: "Overview", icon: "📊" }].map(tab => (
+          {[
+  { id: "pipeline", label: `Pipeline ${apps.length>0?"("+apps.length+")":""}`, icon: "🎯" },
+  { id: "billing", label: `Billing ${cancelRequests>0?"("+cancelRequests+")":""}`, icon: "💳" },
+  { id: "invoicing", label: "Invoices", icon: "🧾" },
+  { id: "contractors", label: "Contractors", icon: "👥" },
+  { id: "unassigned", label: `Unassigned ${unassignedLeads.length > 0 ? "("+unassignedLeads.length+")" : ""}`, icon: "📥" },
+  { id: "overview", label: "Analytics", icon: "📊" },
+].map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{ background: activeTab === tab.id ? T.surface2 : "none", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 13px", borderRadius: 7, color: activeTab === tab.id ? T.white : T.muted, transition: "all 0.2s", display: "flex", alignItems: "center", gap: 5 }}>
               <span style={{ fontSize: 12 }}>{tab.icon}</span>{tab.label}
             </button>
@@ -2377,7 +3518,13 @@ function AdminDashboard({ adminUser, onLogout }) {
       </nav>
 
       <div style={{ flex: 1, padding: "24px", width: "100%", maxWidth: 1400, margin: "0 auto" }}>
-        {activeTab === "overview" ? (
+        {activeTab === "pipeline" ? (
+          <ContractorCRM contractors={contractors} toast={showToast}/>
+        ) : activeTab === "invoicing" ? (
+          <AdminInvoicing contractors={contractors} toast={showToast}/>
+        ) : activeTab === "billing" ? (
+          <AdminBillingView contractors={contractors} allBilling={allBilling} onRefresh={()=>{db.getAllBilling().then(d=>{setAllBilling(d);setCancelRequests(d.filter(b=>b.status==="cancel_pending").length);});loadContractors();}} toast={showToast}/>
+        ) : activeTab === "overview" ? (
           <AdminStats contractors={contractors}/>
         ) : activeTab === "unassigned" ? (
           <div style={{ animation: "fadeIn 0.3s ease" }}>
@@ -2536,6 +3683,7 @@ export default function App(){
   const [user,setUser]=useState(null);
   const [adminUser,setAdminUser]=useState(null);
   const [intakeInd,setIntakeInd]=useState("hvac");
+  const [page2,setPage2]=useState(null); // sub-pages: 'apply'
 
   // Detect ?admin=1 in URL to show admin login
   const isAdminRoute=new URLSearchParams(window.location.search).get("admin")==="1";
@@ -2581,7 +3729,8 @@ export default function App(){
   );
   if(page==="adminLogin")return <AdminLogin onAuth={u=>{setAdminUser(u);setPage("admin");}}/>;
   if(page==="admin"&&adminUser)return <AdminDashboard adminUser={adminUser} onLogout={handleAdminLogout}/>;
+  if(page2==="apply")return <ContractorApplicationForm onBack={()=>setPage2(null)}/>;
   if(page==="intake")return <IntakeForm industryKey={intakeInd} onBack={()=>setPage("landing")}/>;
   if(page==="dashboard"&&user)return <Dashboard user={user} onLogout={handleLogout}/>;
-  return <LandingPage onLogin={u=>{setUser(u);setPage("dashboard");}} onIntakeForm={goIntake}/>;
+  return <LandingPage onLogin={u=>{setUser(u);setPage("dashboard");}} onIntakeForm={goIntake} onApply={()=>setPage2("apply")}/>;
 }
