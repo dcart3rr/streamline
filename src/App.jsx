@@ -1706,6 +1706,150 @@ function ContractorApplicationForm({onBack}){
 }
 
 // ─── LANDING PAGE ─────────────────────────────────────────────────────────────
+
+// Industry detail pages — replaces intake form links
+const INDUSTRY_DETAIL = {
+  hvac:{
+    label:"HVAC", icon:"🌬️", color:"#06B6D4",
+    hero:"Stop Losing HVAC Jobs to Slow Follow-Up.",
+    sub:"Streamline delivers pre-qualified heating and cooling leads directly to your dashboard — scored, exclusive, and ready to book.",
+    pain:"The HVAC problem: customers search, submit to 3 platforms, and book whoever calls first. You're competing blind.",
+    how:"We embed your intake form inside your Google and Facebook ads. Customers answer 5 targeted questions — system type, issue, urgency, property size, budget — before they ever see a phone number. By the time you call, they know their estimate and you know exactly what you're walking into.",
+    stats:[{n:"92%",l:"of HVAC leads come via mobile search"},{n:"4 min",l:"avg time to complete intake"},{n:"$2,400",l:"avg HVAC job value on platform"},{n:"1",l:"contractor per lead — always"}],
+    features:["Emergency vs. scheduled urgency flagging","AC, heat pump, furnace, duct — issue-specific routing","Pre-generated estimate range before first call","Ownership and property size captured upfront"],
+    quote:{text:"\"I used to get 3 calls a day from HomeAdvisor. Half were tire-kickers. Streamline sends me 4-5 leads a week and I close almost every one.\"",attr:"HVAC contractor, Columbus OH"},
+  },
+  roofing:{
+    label:"Roofing", icon:"🏠", color:"#F59E0B",
+    hero:"Roofing Leads That Already Know Their Budget.",
+    sub:"Pre-scored homeowners with damage, age, or replacement needs — delivered exclusively to your pipeline before they call anyone else.",
+    pain:"The roofing problem: storm chasers flood neighborhoods with door hangers, Angi sells your lead to 4 competitors, and customers don't even know what a job costs.",
+    how:"Our intake form asks about damage type, storm vs. age-related, roof size, material preference, and budget tolerance. Every lead gets a price range before you call. No sticker shock, no wasted drive-bys.",
+    stats:[{n:"68%",l:"of roofing jobs come from storm or leak urgency"},{n:"$8,500",l:"avg roofing job value on platform"},{n:"2.1x",l:"higher close rate vs. shared leads"},{n:"0",l:"competitors see your lead"}],
+    features:["Storm damage vs. scheduled replacement classification","Roof size and material captured in form","Insurance claim indicator question","Urgency tier: emergency leak vs. this season vs. planning"],
+    quote:{text:"\"First week I got two leads. Closed both. That's never happened with any other service I've used.\"",attr:"Roofing contractor, Westerville OH"},
+  },
+  plumbing:{
+    label:"Plumbing", icon:"🔧", color:"#10B981",
+    hero:"Plumbing Leads With Urgency Built In.",
+    sub:"From emergency burst pipes to planned remodels — every lead scored and routed based on urgency, property type, and job scope.",
+    pain:"The plumbing problem: most lead gen services don't separate 'I have a dripping faucet' from 'my basement is flooding.' You're paying the same for both.",
+    how:"Our intake captures issue type, urgency, ownership, property age, and scope. Emergency leads are flagged instantly. Planned remodel leads come with budget and timeline so you can prioritize your week intelligently.",
+    stats:[{n:"43%",l:"of plumbing leads are emergency or same-day"},{n:"$1,800",l:"avg plumbing job value on platform"},{n:"<60s",l:"emergency lead notification time"},{n:"100%",l:"exclusive — never resold"}],
+    features:["Emergency vs. scheduled urgency split","Water heater, drain, leak, remodel — issue routing","Ownership and rental status captured","Property age flag for older-home upsell potential"],
+    quote:{text:"\"The emergency leads alone pay for the plan. Everything else is profit.\"",attr:"Plumbing contractor, Dublin OH"},
+  },
+  electrical:{
+    label:"Electrical", icon:"⚡", color:"#A78BFA",
+    hero:"Electrical Leads From Homeowners Ready to Book.",
+    sub:"Panel upgrades, EV chargers, smart home installs, and safety inspections — pre-qualified and delivered to your dashboard in real time.",
+    pain:"The electrical problem: electrical work is high-value but most lead gen sends you vague 'need electrician' requests with no scope, no budget, and no urgency.",
+    how:"We ask about service type, property ownership, panel age, and budget tier. EV charger installs and panel upgrades are flagged as high-value automatically. You see the full scope before you pick up the phone.",
+    stats:[{n:"$3,200",l:"avg electrical job value on platform"},{n:"EV charger",l:"fastest-growing request type"},{n:"82%",l:"of leads are homeowners (not renters)"},{n:"24/7",l:"lead delivery — no batch processing"}],
+    features:["Panel upgrade vs. outlet vs. EV charger classification","Property ownership captured upfront","Budget tier selection before form completion","Smart home and whole-home generator flagging"],
+    quote:{text:"\"EV charger installs are my most profitable jobs. Streamline sends me 2-3 a month and they're all pre-qualified.\"",attr:"Electrical contractor, New Albany OH"},
+  },
+};
+
+function IndustryPage({industryKey, onBack, onApply}) {
+  const d = INDUSTRY_DETAIL[industryKey];
+  if(!d) { onBack(); return null; }
+  const SE=({c,color})=><div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:10,fontWeight:500,color:color||T.blueL,textTransform:"uppercase",letterSpacing:"0.14em",marginBottom:10}}>{c}</div>;
+
+  return <div style={{background:T.bg,minHeight:"100vh"}}>
+    {/* Nav */}
+    <nav style={{position:"fixed",top:0,left:0,right:0,height:60,zIndex:200,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 20px",background:"rgba(9,12,17,0.96)",backdropFilter:"blur(20px)",borderBottom:`1px solid ${T.border}`}}>
+      <button onClick={onBack} style={{display:"flex",alignItems:"center",gap:10,background:"none",border:"none",cursor:"pointer"}}>
+        <LogoMark size={26}/><span style={{fontFamily:"'DM Serif Display',serif",fontSize:17,color:T.white}}>Streamline</span>
+      </button>
+      <div style={{display:"flex",gap:8}}>
+        <Btn variant="outline" onClick={onBack} style={{fontSize:12,padding:"6px 14px"}}>← All Industries</Btn>
+        <Btn onClick={onApply} style={{fontSize:12,padding:"6px 16px"}}>Apply Now</Btn>
+      </div>
+    </nav>
+
+    {/* Hero */}
+    <section style={{padding:"120px 20px 80px",textAlign:"center",position:"relative",overflow:"hidden",background:`radial-gradient(ellipse 80% 60% at 50% 40%,${d.color}18,transparent 70%)`}}>
+      <div style={{position:"absolute",top:0,left:0,right:0,height:1,background:`linear-gradient(90deg,transparent 5%,${d.color}80 50%,transparent 95%)`}}/>
+      <div style={{maxWidth:720,margin:"0 auto",position:"relative",zIndex:1}}>
+        <div style={{display:"inline-flex",alignItems:"center",gap:8,background:`${d.color}18`,border:`1px solid ${d.color}40`,borderRadius:100,padding:"6px 16px",fontSize:11,fontWeight:600,color:d.color,letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:20}}>
+          {d.icon} {d.label} · Exclusive Leads
+        </div>
+        <h1 style={{fontFamily:"'DM Serif Display',serif",fontSize:"clamp(32px,6vw,58px)",lineHeight:1.05,letterSpacing:"-0.03em",marginBottom:16}}>{d.hero}</h1>
+        <p style={{fontSize:"clamp(14px,2vw,17px)",color:T.offWhite,lineHeight:1.75,maxWidth:520,margin:"0 auto 32px",fontWeight:300}}>{d.sub}</p>
+        <Btn size="lg" onClick={onApply} style={{background:d.color,border:"none"}}>Apply for {d.label} Leads →</Btn>
+      </div>
+    </section>
+
+    {/* Pain point */}
+    <section style={{padding:"clamp(40px,5vw,72px) 20px",borderTop:`1px solid ${T.border}`,background:T.surface}}>
+      <div style={{maxWidth:900,margin:"0 auto",display:"grid",gridTemplateColumns:"1fr 1fr",gap:48,alignItems:"center"}} className="grid-1-mobile">
+        <div>
+          <SE c="The Problem" color={d.color}/>
+          <h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:"clamp(22px,3vw,32px)",letterSpacing:-1,marginBottom:14,lineHeight:1.2}}>Why most {d.label} contractors struggle with leads</h2>
+          <p style={{fontSize:14,color:T.offWhite,lineHeight:1.8}}>{d.pain}</p>
+        </div>
+        <div style={{background:T.bg,border:`1px solid ${d.color}30`,borderRadius:14,padding:"24px",borderLeft:`3px solid ${d.color}`}}>
+          <SE c="How Streamline Fixes It" color={d.color}/>
+          <p style={{fontSize:14,color:T.offWhite,lineHeight:1.8}}>{d.how}</p>
+        </div>
+      </div>
+    </section>
+
+    {/* Stats */}
+    <section style={{padding:"clamp(40px,5vw,72px) 20px"}}>
+      <div style={{maxWidth:900,margin:"0 auto"}}>
+        <SE c={`${d.label} by the numbers`} color={d.color}/>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:1,background:T.border,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginTop:16}}>
+          {d.stats.map(s=>(
+            <div key={s.l} style={{background:T.surface,padding:"clamp(16px,2vw,28px)",transition:"background 0.2s"}} onMouseEnter={e=>e.currentTarget.style.background=T.surface2} onMouseLeave={e=>e.currentTarget.style.background=T.surface}>
+              <div style={{fontFamily:"'DM Serif Display',serif",fontSize:"clamp(24px,3vw,38px)",color:d.color,lineHeight:1,marginBottom:6,letterSpacing:-1}}>{s.n}</div>
+              <div style={{fontSize:12,color:T.muted,lineHeight:1.5}}>{s.l}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+
+    {/* Features */}
+    <section style={{padding:"clamp(40px,5vw,72px) 20px",borderTop:`1px solid ${T.border}`,background:T.surface}}>
+      <div style={{maxWidth:900,margin:"0 auto",display:"grid",gridTemplateColumns:"1fr 1fr",gap:48,alignItems:"start"}} className="grid-1-mobile">
+        <div>
+          <SE c="What We Capture" color={d.color}/>
+          <h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:"clamp(22px,3vw,32px)",letterSpacing:-1,marginBottom:20,lineHeight:1.2}}>Every {d.label} lead comes with full context.</h2>
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {d.features.map(f=>(
+              <div key={f} style={{display:"flex",alignItems:"flex-start",gap:10,padding:"12px 14px",background:T.bg,borderRadius:10,border:`1px solid ${T.border2}`}}>
+                <span style={{color:d.color,fontSize:14,flexShrink:0,marginTop:1}}>✓</span>
+                <span style={{fontSize:13,color:T.offWhite,lineHeight:1.5}}>{f}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        {/* Quote */}
+        <div>
+          <SE c="From the field" color={d.color}/>
+          <div style={{background:T.bg,border:`1px solid ${d.color}30`,borderRadius:14,padding:"24px 28px",borderTop:`3px solid ${d.color}`}}>
+            <div style={{color:d.color,fontSize:20,marginBottom:12,letterSpacing:2}}>★★★★★</div>
+            <p style={{fontFamily:"'DM Serif Display',serif",fontSize:16,color:T.offWhite,lineHeight:1.75,fontStyle:"italic",marginBottom:16}}>{d.quote.text}</p>
+            <div style={{fontSize:12,color:T.muted}}>{d.quote.attr}</div>
+          </div>
+          <div style={{marginTop:20,padding:"16px 20px",background:`${d.color}10`,border:`1px solid ${d.color}30`,borderRadius:12}}>
+            <div style={{fontSize:13,fontWeight:600,color:d.color,marginBottom:4}}>Ready to see it in your market?</div>
+            <div style={{fontSize:12,color:T.muted,marginBottom:14}}>Apply in 3 minutes. No commitment required.</div>
+            <Btn onClick={onApply} style={{background:d.color,border:"none",width:"100%"}}>Apply for {d.label} Leads</Btn>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    {/* Footer */}
+    <footer style={{borderTop:`1px solid ${T.border}`,padding:"28px 20px",textAlign:"center"}}>
+      <button onClick={onBack} style={{background:"none",border:"none",cursor:"pointer",fontSize:13,color:T.muted}}>← Back to Streamline.io</button>
+    </footer>
+  </div>;
+}
+
 function LandingFAQ(){
   const [open,setOpen]=useState(0);
   const faqs=[
@@ -1726,21 +1870,20 @@ function LandingFAQ(){
   </div>;
 }
 
-function LandingPage({onLogin,onIntakeForm,onApply}){
+function LandingPage({onLogin,onIntakeForm,onApply,onIndustry}){
   const [showAuth,setShowAuth]=useState(false);
   const [mobileNav,setMobileNav]=useState(false);
   const scrollTo=id=>{document.getElementById(id)?.scrollIntoView({behavior:"smooth"});setMobileNav(false);};
   const SE=({c})=><div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:10,fontWeight:500,color:T.blueL,textTransform:"uppercase",letterSpacing:"0.14em",marginBottom:10}}>{c}</div>;
   const SH=({c,center})=><h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:"clamp(26px,4vw,40px)",lineHeight:1.1,letterSpacing:-1,marginBottom:14,textAlign:center?"center":"left"}}>{c}</h2>;
-
   const navLinks=[["industries","Industries"],["how","How It Works"],["features","Features"],["pricing","Pricing"],["faq","FAQ"]];
 
-  return <div style={{background:T.bg,minHeight:"100vh",width:"100%"}}>
+  return <div style={{background:T.bg,minHeight:"100vh",width:"100%",overflowX:"hidden"}}>
     {/* NAV */}
     <nav style={{position:"fixed",top:0,left:0,right:0,height:60,zIndex:200,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 20px",background:"rgba(9,12,17,0.94)",backdropFilter:"blur(20px)",borderBottom:`1px solid ${T.border}`}}>
-      <div style={{display:"flex",alignItems:"center",gap:10}}>
-        <LogoMark size={28}/><span style={{fontFamily:"'DM Serif Display',serif",fontSize:18}}>Streamline</span>
-      </div>
+      <button onClick={()=>window.scrollTo({top:0,behavior:"smooth"})} style={{display:"flex",alignItems:"center",gap:10,background:"none",border:"none",cursor:"pointer"}}>
+        <LogoMark size={28}/><span style={{fontFamily:"'DM Serif Display',serif",fontSize:18,color:T.white}}>Streamline</span>
+      </button>
       <div style={{display:"flex",alignItems:"center",gap:2}} className="hide-mobile">
         {navLinks.map(([id,label])=>(
           <button key={id} onClick={()=>scrollTo(id)} style={{background:"none",border:"none",cursor:"pointer",fontSize:13,fontWeight:500,color:T.muted,padding:"6px 11px",borderRadius:7,transition:"color 0.2s"}} onMouseEnter={e=>e.currentTarget.style.color=T.white} onMouseLeave={e=>e.currentTarget.style.color=T.muted}>{label}</button>
@@ -1753,7 +1896,7 @@ function LandingPage({onLogin,onIntakeForm,onApply}){
     </nav>
     <style>{`@media(max-width:768px){#burger{display:flex!important}}`}</style>
 
-    {/* Mobile nav drawer */}
+    {/* Mobile nav */}
     {mobileNav&&<div style={{position:"fixed",top:60,left:0,right:0,background:T.surface,borderBottom:`1px solid ${T.border}`,zIndex:199,padding:"8px 0",animation:"fadeUp 0.2s ease"}}>
       {navLinks.map(([id,label])=><button key={id} onClick={()=>scrollTo(id)} style={{display:"block",width:"100%",background:"none",border:"none",cursor:"pointer",fontSize:15,fontWeight:500,color:T.offWhite,padding:"13px 20px",textAlign:"left"}}>{label}</button>)}
       <div style={{padding:"10px 16px",borderTop:`1px solid ${T.border}`,marginTop:4}}>
@@ -1761,11 +1904,22 @@ function LandingPage({onLogin,onIntakeForm,onApply}){
       </div>
     </div>}
 
-    {/* HERO */}
-    <section style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"clamp(90px,14vw,150px) 20px 80px",textAlign:"center",position:"relative",overflow:"hidden",background:"radial-gradient(ellipse 80% 60% at 50% 40%,rgba(37,99,235,0.1),transparent 70%)",width:"100%"}}>
-      <div style={{position:"absolute",top:0,left:0,right:0,height:1,background:"linear-gradient(90deg,transparent 5%,rgba(37,99,235,0.5) 35%,rgba(6,182,212,0.6) 50%,rgba(37,99,235,0.5) 65%,transparent 95%)"}}/>
+    {/* HERO — richer background */}
+    <section style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"clamp(90px,14vw,150px) 20px 80px",textAlign:"center",position:"relative",overflow:"hidden",width:"100%"}}>
+      {/* Multi-layer background */}
+      <div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse 90% 70% at 50% 30%,rgba(37,99,235,0.18),transparent 65%)",pointerEvents:"none"}}/>
+      <div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse 50% 50% at 20% 80%,rgba(6,182,212,0.1),transparent 60%)",pointerEvents:"none"}}/>
+      <div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse 40% 40% at 80% 70%,rgba(167,139,250,0.08),transparent 60%)",pointerEvents:"none"}}/>
+      {/* Subtle grid */}
+      <div style={{position:"absolute",inset:0,backgroundImage:"linear-gradient(rgba(255,255,255,0.02) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.02) 1px,transparent 1px)",backgroundSize:"60px 60px",pointerEvents:"none"}}/>
+      {/* Top edge line */}
+      <div style={{position:"absolute",top:0,left:0,right:0,height:1,background:"linear-gradient(90deg,transparent 5%,rgba(37,99,235,0.6) 35%,rgba(6,182,212,0.7) 50%,rgba(37,99,235,0.6) 65%,transparent 95%)"}}/>
+      {/* Floating orbs */}
+      <div style={{position:"absolute",width:300,height:300,borderRadius:"50%",background:"radial-gradient(circle,rgba(37,99,235,0.06),transparent 70%)",top:"15%",left:"10%",pointerEvents:"none"}}/>
+      <div style={{position:"absolute",width:200,height:200,borderRadius:"50%",background:"radial-gradient(circle,rgba(6,182,212,0.07),transparent 70%)",bottom:"20%",right:"8%",pointerEvents:"none"}}/>
+
       <div style={{maxWidth:700,position:"relative",zIndex:1,width:"100%",margin:"0 auto"}}>
-        <div style={{display:"inline-flex",alignItems:"center",gap:8,background:"rgba(37,99,235,0.1)",border:"1px solid rgba(37,99,235,0.25)",borderRadius:100,padding:"6px 14px",fontSize:11,fontWeight:600,color:T.blueL,letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:22}}>
+        <div style={{display:"inline-flex",alignItems:"center",gap:8,background:"rgba(37,99,235,0.12)",border:"1px solid rgba(37,99,235,0.3)",borderRadius:100,padding:"6px 16px",fontSize:11,fontWeight:600,color:T.blueL,letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:24}}>
           <div style={{width:5,height:5,background:T.blueL,borderRadius:"50%",animation:"pulse 2s infinite"}}/>Now accepting — Columbus, OH
         </div>
         <h1 style={{fontFamily:"'DM Serif Display',serif",fontSize:"clamp(38px,7vw,70px)",lineHeight:1.05,letterSpacing:"-0.03em",marginBottom:18}}>
@@ -1775,64 +1929,91 @@ function LandingPage({onLogin,onIntakeForm,onApply}){
         <p style={{fontSize:"clamp(14px,2vw,17px)",color:T.offWhite,lineHeight:1.75,maxWidth:480,margin:"0 auto 32px",fontWeight:300}}>
           Qualified, scored leads delivered to your dashboard. <em style={{color:T.cyan,fontStyle:"italic"}}>Exclusive.</em> Always.
         </p>
-        <div style={{display:"flex",gap:12,justifyContent:"center",flexWrap:"wrap",marginBottom:22}}>
+        <div style={{display:"flex",gap:12,justifyContent:"center",flexWrap:"wrap",marginBottom:28}}>
           <Btn size="lg" onClick={onApply}>Get Started →</Btn>
-          <Btn variant="outline" size="lg" onClick={()=>onIntakeForm("hvac")}>Try the Intake Form</Btn>
+          <Btn variant="outline" size="lg" onClick={()=>scrollTo("industries")}>See Industries</Btn>
         </div>
+        {/* Industry pills — now link to industry pages */}
         <div style={{display:"flex",justifyContent:"center",gap:8,flexWrap:"wrap"}}>
           {Object.entries(INDUSTRIES).map(([k,v])=>(
-            <span key={k} onClick={()=>onIntakeForm(k)} style={{background:T.surface2,border:`1px solid ${T.border2}`,borderRadius:100,padding:"5px 13px",fontSize:12,color:T.offWhite,fontWeight:500,cursor:"pointer",transition:"border-color 0.2s"}} onMouseEnter={e=>e.currentTarget.style.borderColor=v.color+"80"} onMouseLeave={e=>e.currentTarget.style.borderColor=T.border2}>{v.icon} {v.label}</span>
+            <span key={k} onClick={()=>onIndustry(k)} style={{background:"rgba(255,255,255,0.04)",border:`1px solid ${T.border2}`,borderRadius:100,padding:"6px 16px",fontSize:12,color:T.offWhite,fontWeight:500,cursor:"pointer",transition:"all 0.2s",backdropFilter:"blur(8px)"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=v.color+"90";e.currentTarget.style.background=v.color+"12";e.currentTarget.style.color=v.color;}} onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border2;e.currentTarget.style.background="rgba(255,255,255,0.04)";e.currentTarget.style.color=T.offWhite;}}>{v.icon} {v.label}</span>
           ))}
         </div>
       </div>
     </section>
 
-    {/* INDUSTRIES */}
-    <section id="industries" style={{padding:"clamp(48px,7vw,88px) 20px",borderTop:`1px solid ${T.border}`,borderBottom:`1px solid ${T.border}`}}>
-      <div style={{maxWidth:1200,margin:"0 auto",width:"100%"}}>
-        <p style={{textAlign:"center",fontSize:10,fontWeight:500,color:T.muted,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:32,fontFamily:"'JetBrains Mono',monospace"}}>Built for service businesses that run on booked jobs</p>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12}}>
+    {/* INDUSTRIES — now sales cards linking to industry pages */}
+    <section id="industries" style={{padding:"clamp(48px,7vw,88px) 20px",borderTop:`1px solid ${T.border}`,background:T.surface,position:"relative",overflow:"hidden"}}>
+      <div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse 60% 50% at 50% 100%,rgba(37,99,235,0.06),transparent 70%)",pointerEvents:"none"}}/>
+      <div style={{maxWidth:1200,margin:"0 auto",width:"100%",position:"relative",zIndex:1}}>
+        <div style={{textAlign:"center",marginBottom:36}}>
+          <SE c="Industries We Serve"/>
+          <SH c="Built for the trades that run on booked jobs." center/>
+          <p style={{color:T.muted,fontSize:14,maxWidth:480,margin:"0 auto"}}>Each industry has its own intake flow, scoring model, and lead type — tailored to how customers actually buy in that market.</p>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14}} className="grid-2-mobile">
           {Object.entries(INDUSTRIES).map(([k,v])=>(
-            <div key={k} onClick={()=>onIntakeForm(k)} style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:12,padding:"20px 16px",textAlign:"center",cursor:"pointer",transition:"all 0.22s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=v.color+"60";e.currentTarget.style.transform="translateY(-3px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border2;e.currentTarget.style.transform="none";}}>
-              <div style={{fontSize:26,marginBottom:8}}>{v.icon}</div>
-              <div style={{fontSize:13,fontWeight:600,marginBottom:2}}>{v.label}</div>
-              <div style={{fontSize:11,color:T.muted}}>Get a quote →</div>
+            <div key={k} onClick={()=>onIndustry(k)}
+              style={{background:T.bg,border:`1px solid ${T.border2}`,borderRadius:16,padding:"28px 20px",cursor:"pointer",transition:"all 0.25s",position:"relative",overflow:"hidden",textAlign:"center"}}
+              onMouseEnter={e=>{e.currentTarget.style.borderColor=v.color+"60";e.currentTarget.style.transform="translateY(-5px)";e.currentTarget.style.background=T.surface2;e.currentTarget.querySelector(".ind-arrow").style.opacity="1";}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border2;e.currentTarget.style.transform="none";e.currentTarget.style.background=T.bg;e.currentTarget.querySelector(".ind-arrow").style.opacity="0";}}>
+              <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:`linear-gradient(90deg,transparent,${v.color},transparent)`,opacity:0.6}}/>
+              <div style={{width:56,height:56,borderRadius:"50%",background:`${v.color}15`,border:`1px solid ${v.color}30`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,margin:"0 auto 14px"}}>{v.icon}</div>
+              <div style={{fontSize:16,fontWeight:700,marginBottom:8,color:T.white}}>{v.label}</div>
+              <div style={{fontSize:12,color:T.muted,lineHeight:1.6,marginBottom:14}}>{k==="hvac"?"Heating, cooling, and air quality leads with urgency and system type captured.":k==="roofing"?"Storm damage, replacements, and repairs — with scope and budget pre-qualified.":k==="plumbing"?"Emergency and planned jobs, scored by urgency, scope, and property type.":"Panel upgrades, EV chargers, and safety work — pre-qualified and high-value."}</div>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5,fontSize:12,color:v.color,fontWeight:600}}>
+                See how it works <span className="ind-arrow" style={{opacity:0,transition:"opacity 0.2s",fontSize:14}}>→</span>
+              </div>
             </div>
           ))}
         </div>
       </div>
     </section>
 
-    {/* HOW IT WORKS */}
-    <section id="how" style={{padding:"clamp(48px,7vw,88px) 20px"}}>
-      <div style={{maxWidth:1200,margin:"0 auto",width:"100%"}}>
+    {/* HOW IT WORKS — without campaign URLs card */}
+    <section id="how" style={{padding:"clamp(48px,7vw,88px) 20px",position:"relative",overflow:"hidden"}}>
+      <div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse 50% 60% at 80% 50%,rgba(6,182,212,0.05),transparent 65%)",pointerEvents:"none"}}/>
+      <div style={{maxWidth:1200,margin:"0 auto",width:"100%",position:"relative",zIndex:1}}>
         <SE c="How It Works"/>
         <SH c="From customer intent to your calendar."/>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"clamp(20px,5vw,56px)",marginTop:36,alignItems:"start"}} className="grid-1-mobile">
           <div>
-            {[{n:"01",title:"Customer requests a quote",desc:"Fills out the industry-specific intake form from your ad or direct link. Issue type, urgency, budget, property details — all captured."},{n:"02",title:"We score and qualify",desc:"Every lead scored 0–100 across six dimensions. Low-intent leads filtered automatically."},{n:"03",title:"Instant estimate generated",desc:"Each qualified lead gets a price range before you call — no sticker shock on first contact."},{n:"04",title:"Lead delivered in real-time",desc:"Full lead package in your dashboard in under 60 seconds. Exclusively yours."}].map((s,i)=>(
+            {[
+              {n:"01",title:"Customer sees your ad",desc:"They click your Google or Facebook ad and land on an industry-specific intake form — tailored to their exact service need."},
+              {n:"02",title:"5-minute qualification",desc:"They answer questions about issue type, urgency, budget, property details. Pre-scored 0–100 across six dimensions automatically."},
+              {n:"03",title:"Instant estimate generated",desc:"Every qualified lead receives a price range before you call — no sticker shock, no wasted time explaining costs."},
+              {n:"04",title:"Lead in your dashboard",desc:"Full lead package delivered exclusively to you within 60 seconds. Name, contact, score, breakdown, and booking link."},
+            ].map((s,i)=>(
               <div key={i} style={{display:"flex",gap:14,padding:"18px 0",borderBottom:`1px solid ${T.border}`,borderTop:i===0?`1px solid ${T.border}`:"none"}}>
                 <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:10,color:T.muted,minWidth:22,paddingTop:2,flexShrink:0}}>{s.n}</div>
                 <div><div style={{fontSize:14,fontWeight:600,marginBottom:5}}>{s.title}</div><div style={{fontSize:13,color:T.muted,lineHeight:1.65}}>{s.desc}</div></div>
               </div>
             ))}
           </div>
-          {/* Campaign URL card */}
+          {/* Visual card — score breakdown mock */}
           <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:14,overflow:"hidden",boxShadow:"0 20px 50px rgba(0,0,0,0.4)"}}>
-            <div style={{padding:"12px 16px",borderBottom:`1px solid ${T.border}`,background:T.surface2}}>
-              <div style={{fontSize:10,color:T.muted,fontFamily:"'JetBrains Mono',monospace",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Ad Campaign URLs</div>
-              <div style={{fontSize:12,color:T.offWhite}}>One intake form per industry — driven by URL</div>
+            <div style={{padding:"12px 16px",borderBottom:`1px solid ${T.border}`,background:T.surface2,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div style={{fontSize:12,fontWeight:600}}>Lead Preview</div>
+              <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:10,color:T.green}}>● Delivered live</div>
             </div>
-            <div style={{padding:12,display:"flex",flexDirection:"column",gap:8}}>
-              {Object.entries(INDUSTRIES).map(([k,v])=>(
-                <div key={k} style={{background:T.surface2,borderRadius:8,padding:"10px 12px",border:`1px solid ${T.border}`}}>
-                  <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:4}}>
-                    <span style={{fontSize:14}}>{v.icon}</span>
-                    <span style={{fontSize:12,fontWeight:600}}>{v.label}</span>
-                  </div>
-                  <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:10,color:T.blueL,wordBreak:"break-all"}}>streamline-ecru.vercel.app/?industry={k}</div>
+            <div style={{padding:16}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+                <div>
+                  <div style={{fontSize:15,fontWeight:700,marginBottom:2}}>Sarah M.</div>
+                  <div style={{fontSize:12,color:T.muted}}>AC Replacement · 43215</div>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:28,fontWeight:700,color:T.green,lineHeight:1}}>84</div>
+                  <div style={{fontSize:10,color:T.muted}}>/ 100</div>
+                </div>
+              </div>
+              {[["Budget","$2,000–5,000",T.green,17,20],["Urgency","Emergency",T.red,20,20],["Ownership","Owner",T.green,15,15],["Property","2,000–3,500 sqft",T.amber,13,15]].map(([l,v,c,s,mx])=>(
+                <div key={l} style={{marginBottom:10}}>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:3}}><span style={{color:T.muted}}>{l}</span><span style={{color:c,fontFamily:"'JetBrains Mono',monospace",fontSize:10}}>{s}/{mx}</span></div>
+                  <div style={{height:3,background:T.border,borderRadius:2,overflow:"hidden"}}><div style={{width:`${(s/mx)*100}%`,height:"100%",background:c,borderRadius:2}}/></div>
                 </div>
               ))}
+              <div style={{background:"rgba(16,185,129,0.08)",border:"1px solid rgba(16,185,129,0.2)",borderRadius:8,padding:"8px 12px",marginTop:14,fontSize:12,color:T.green}}>Estimate: $3,200 – $4,800 · Ready to book</div>
             </div>
           </div>
         </div>
@@ -1840,8 +2021,9 @@ function LandingPage({onLogin,onIntakeForm,onApply}){
     </section>
 
     {/* METRICS */}
-    <section style={{padding:"clamp(48px,7vw,88px) 20px",borderTop:`1px solid ${T.border}`,borderBottom:`1px solid ${T.border}`,background:T.surface}}>
-      <div style={{maxWidth:1200,margin:"0 auto",width:"100%"}}>
+    <section style={{padding:"clamp(48px,7vw,88px) 20px",borderTop:`1px solid ${T.border}`,borderBottom:`1px solid ${T.border}`,background:T.surface,position:"relative",overflow:"hidden"}}>
+      <div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse 70% 50% at 30% 50%,rgba(37,99,235,0.05),transparent 70%)",pointerEvents:"none"}}/>
+      <div style={{maxWidth:1200,margin:"0 auto",width:"100%",position:"relative",zIndex:1}}>
         <SE c="By the Numbers"/>
         <SH c="Built for businesses that run lean."/>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:1,background:T.border,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginTop:32}}>
@@ -1865,7 +2047,7 @@ function LandingPage({onLogin,onIntakeForm,onApply}){
           <p style={{fontSize:14,color:T.offWhite,lineHeight:1.7,fontWeight:300}}>Purpose-built for service businesses. No bloated CRM, no learning curve.</p>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:1,background:T.border,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
-          {[{icon:"⚡",title:"Intelligent Lead Scoring",desc:"Scored across six dimensions before it reaches you."},{icon:"📊",title:"Real-Time Dashboard",desc:"Live pipeline with score breakdowns and booking status."},{icon:"🔗",title:"URL-Driven Campaigns",desc:"One link per ad. Each industry gets a custom intake flow."},{icon:"📋",title:"Industry-Specific Forms",desc:"HVAC, Roofing, Plumbing, Electrical — tailored questions."},{icon:"🔔",title:"Instant Notifications",desc:"In-app alert the moment a lead is assigned to you."},{icon:"📈",title:"Win/Loss Tracking",desc:"Track close rates by job type and season."}].map(f=>(
+          {[{icon:"⚡",title:"Intelligent Lead Scoring",desc:"Scored across six dimensions before it reaches you."},{icon:"📊",title:"Real-Time Dashboard",desc:"Live pipeline with score breakdowns and booking status."},{icon:"🔒",title:"Exclusive Every Time",desc:"One contractor per lead. Always. No exceptions."},{icon:"📋",title:"Industry-Specific Forms",desc:"HVAC, Roofing, Plumbing, Electrical — tailored questions."},{icon:"🔔",title:"Instant Notifications",desc:"In-app alert the moment a lead is assigned to you."},{icon:"📈",title:"Win/Loss Tracking",desc:"Track close rates by job type and season."}].map(f=>(
             <div key={f.title} style={{background:T.surface,padding:"clamp(18px,2vw,28px)",transition:"background 0.2s"}} onMouseEnter={e=>e.currentTarget.style.background=T.surface2} onMouseLeave={e=>e.currentTarget.style.background=T.surface}>
               <div style={{width:38,height:38,background:"rgba(37,99,235,0.12)",borderRadius:9,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,marginBottom:12,border:"1px solid rgba(37,99,235,0.2)"}}>{f.icon}</div>
               <div style={{fontSize:14,fontWeight:600,marginBottom:6}}>{f.title}</div>
@@ -1877,25 +2059,31 @@ function LandingPage({onLogin,onIntakeForm,onApply}){
     </section>
 
     {/* PRICING */}
-    <section id="pricing" style={{padding:"clamp(48px,7vw,88px) 20px",borderTop:`1px solid ${T.border}`}}>
-      <div style={{maxWidth:1200,margin:"0 auto",width:"100%",textAlign:"center"}}>
+    <section id="pricing" style={{padding:"clamp(48px,7vw,88px) 20px",borderTop:`1px solid ${T.border}`,position:"relative",overflow:"hidden"}}>
+      <div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse 60% 60% at 50% 50%,rgba(37,99,235,0.06),transparent 70%)",pointerEvents:"none"}}/>
+      <div style={{maxWidth:1200,margin:"0 auto",width:"100%",textAlign:"center",position:"relative",zIndex:1}}>
         <SE c="Pricing"/>
         <SH c="Pay for what works." center/>
-        <p style={{fontSize:14,color:T.offWhite,lineHeight:1.7,fontWeight:300,maxWidth:440,margin:"0 auto 36px"}}>Low base keeps costs predictable. Performance fee only when you close a job.</p>
+        <p style={{fontSize:14,color:T.offWhite,lineHeight:1.7,fontWeight:300,maxWidth:440,margin:"0 auto 36px"}}>Low monthly base keeps costs predictable. Performance fee only when you close a job.</p>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,maxWidth:860,margin:"0 auto"}} className="grid-1-mobile">
-          {[{plan:"Starter",price:"299",perf:"$150",popular:false,features:["Up to 20 leads / month","Intelligent intake + scoring","Instant estimate generation","In-app notifications","Win/loss tracking","Exclusive leads always"]},
-            {plan:"Growth",price:"499",perf:"$100",popular:true,features:["Up to 50 leads / month","Everything in Starter","Priority lead queue","CRM integrations","Dedicated account manager","Seasonal campaign boosts"]}].map(p=>(
-            <div key={p.plan} style={{background:p.popular?`linear-gradient(135deg,rgba(37,99,235,0.08),${T.surface})`:T.surface,border:`1px solid ${p.popular?T.blue:T.border2}`,borderRadius:16,padding:"clamp(20px,3vw,32px)",position:"relative",transition:"transform 0.22s",textAlign:"left"}} onMouseEnter={e=>e.currentTarget.style.transform="translateY(-3px)"} onMouseLeave={e=>e.currentTarget.style.transform="none"}>
-              {p.popular&&<><div style={{display:"inline-flex",background:T.blue,color:"white",fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:4,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:12,fontFamily:"'JetBrains Mono',monospace"}}>Most Popular</div><div style={{position:"absolute",top:0,left:0,right:0,height:1,background:`linear-gradient(90deg,transparent,${T.blue},transparent)`}}/></>}
+          {[
+            {plan:"Starter",price:"299",perf:"150",popular:false,features:["Exclusive leads delivered to your dashboard","Intelligent intake and lead scoring","Instant estimate generation for each lead","In-app notifications on every new lead","Win/loss tracking and close rate analytics","Dedicated intake URL for your ads"]},
+            {plan:"Growth",price:"499",perf:"100",popular:true,features:["Everything in Starter","Priority lead queue — first access in your market","Lower performance fee per closed job","CRM integrations and data export","Dedicated account manager","Seasonal campaign volume boosts"]},
+          ].map(p=>(
+            <div key={p.plan} style={{background:p.popular?`linear-gradient(135deg,rgba(37,99,235,0.1),${T.surface})`:T.surface,border:`1px solid ${p.popular?T.blue:T.border2}`,borderRadius:16,padding:"clamp(20px,3vw,32px)",position:"relative",transition:"transform 0.22s",textAlign:"left"}} onMouseEnter={e=>e.currentTarget.style.transform="translateY(-3px)"} onMouseLeave={e=>e.currentTarget.style.transform="none"}>
+              {p.popular&&<><div style={{display:"inline-flex",background:T.blue,color:"white",fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:4,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:12,fontFamily:"'JetBrains Mono',monospace"}}>Most Popular</div><div style={{position:"absolute",top:0,left:0,right:0,height:2,background:`linear-gradient(90deg,transparent,${T.blue},${T.cyan},transparent)`}}/></>}
               <div style={{fontSize:11,fontWeight:600,color:T.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6,fontFamily:"'JetBrains Mono',monospace"}}>{p.plan}</div>
-              <div style={{fontFamily:"'DM Serif Display',serif",fontSize:"clamp(36px,5vw,48px)",lineHeight:1,letterSpacing:-2,marginBottom:3}}><sub style={{fontSize:16,fontFamily:"'DM Sans',sans-serif",fontWeight:300,color:T.muted}}>$</sub>{p.price}</div>
-              <div style={{fontSize:12,color:T.muted,marginBottom:5}}>per month</div>
-              <div style={{fontSize:11,color:T.blueL,fontFamily:"'JetBrains Mono',monospace",marginBottom:20,padding:"5px 10px",background:"rgba(37,99,235,0.1)",borderRadius:6,border:"1px solid rgba(37,99,235,0.2)",display:"inline-block"}}>+ {p.perf} per closed job</div>
+              <div style={{display:"flex",alignItems:"baseline",gap:2,marginBottom:2}}>
+                <span style={{fontFamily:"'DM Sans',sans-serif",fontSize:18,fontWeight:300,color:T.muted,alignSelf:"flex-start",marginTop:8}}>$</span>
+                <span style={{fontFamily:"'DM Serif Display',serif",fontSize:"clamp(36px,5vw,52px)",lineHeight:1,letterSpacing:-2}}>{p.price}</span>
+                <span style={{fontSize:14,color:T.muted,fontWeight:300}}>/mo</span>
+              </div>
+              <div style={{fontSize:11,color:T.blueL,fontFamily:"'JetBrains Mono',monospace",marginBottom:20,padding:"5px 10px",background:"rgba(37,99,235,0.1)",borderRadius:6,border:"1px solid rgba(37,99,235,0.2)",display:"inline-block"}}>+ ${p.perf} performance fee per closed job</div>
               <div style={{height:1,background:T.border,marginBottom:18}}/>
               <div style={{display:"flex",flexDirection:"column",gap:9,marginBottom:24}}>
                 {p.features.map(f=><div key={f} style={{display:"flex",alignItems:"flex-start",gap:8,fontSize:13,color:T.offWhite}}><span style={{color:T.blueL,flexShrink:0}}>›</span>{f}</div>)}
               </div>
-              <button onClick={onApply} style={{width:"100%",padding:"12px",borderRadius:10,fontSize:14,fontWeight:600,cursor:"pointer",background:p.popular?T.blue:"none",color:p.popular?"white":T.offWhite,border:p.popular?"none":`1px solid ${T.border2}`,transition:"all 0.2s",touchAction:"manipulation"}}>Get Started</button>
+              <button onClick={onApply} style={{width:"100%",padding:"13px",borderRadius:10,fontSize:14,fontWeight:600,cursor:"pointer",background:p.popular?T.blue:"none",color:p.popular?"white":T.offWhite,border:p.popular?"none":`1px solid ${T.border2}`,transition:"all 0.2s",touchAction:"manipulation"}}>Apply Now</button>
               <div style={{fontSize:10,color:T.muted,textAlign:"center",marginTop:6}}>Secure payment via Stripe · Cancel anytime</div>
             </div>
           ))}
@@ -1904,17 +2092,18 @@ function LandingPage({onLogin,onIntakeForm,onApply}){
     </section>
 
     {/* TESTIMONIALS */}
-    <section style={{padding:"clamp(48px,7vw,88px) 20px",borderTop:`1px solid ${T.border}`,background:T.surface}}>
-      <div style={{maxWidth:1200,margin:"0 auto",width:"100%"}}>
+    <section style={{padding:"clamp(48px,7vw,88px) 20px",borderTop:`1px solid ${T.border}`,background:T.surface,position:"relative",overflow:"hidden"}}>
+      <div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse 50% 60% at 70% 50%,rgba(167,139,250,0.04),transparent 70%)",pointerEvents:"none"}}/>
+      <div style={{maxWidth:1200,margin:"0 auto",width:"100%",position:"relative",zIndex:1}}>
         <SE c="Reviews"/>
         <SH c="What our clients say."/>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:14,marginTop:32}}>
-          {[{initials:"MR",name:"Mike R.",company:"Roofing · Columbus",quote:"The leads come in already knowing their budget. Closing faster than ever."},{initials:"DL",name:"Dana L.",company:"Plumbing · Dublin",quote:"Was paying $800/month sharing leads with four others. Streamline gives me exclusives at a lower cost."},{initials:"JT",name:"James T.",company:"Electrical · Westerville",quote:"Clean dashboard, real leads. I've never received one that was junk."}].map(t=>(
-            <div key={t.name} style={{background:T.bg,border:`1px solid ${T.border2}`,borderRadius:14,padding:"clamp(18px,2vw,24px)",transition:"transform 0.2s,border-color 0.2s"}} onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.borderColor="rgba(37,99,235,0.3)"}} onMouseLeave={e=>{e.currentTarget.style.transform="none";e.currentTarget.style.borderColor=T.border2}}>
+          {[{initials:"MR",name:"Mike R.",company:"Roofing · Columbus",color:"#F59E0B",quote:"The leads come in already knowing their budget. Closing faster than ever."},{initials:"DL",name:"Dana L.",company:"Plumbing · Dublin",color:"#10B981",quote:"Was paying $800/month sharing leads with four others. Streamline gives me exclusives at a lower cost."},{initials:"JT",name:"James T.",company:"Electrical · Westerville",color:"#A78BFA",quote:"Clean dashboard, real leads. I've never received one that was junk."}].map(t=>(
+            <div key={t.name} style={{background:T.bg,border:`1px solid ${T.border2}`,borderRadius:14,padding:"clamp(18px,2vw,24px)",transition:"transform 0.2s,border-color 0.2s"}} onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.borderColor=t.color+"50";}} onMouseLeave={e=>{e.currentTarget.style.transform="none";e.currentTarget.style.borderColor=T.border2;}}>
               <div style={{color:T.amber,fontSize:12,marginBottom:10,letterSpacing:2}}>★★★★★</div>
               <p style={{fontSize:14,color:T.offWhite,lineHeight:1.7,fontStyle:"italic",marginBottom:18,fontFamily:"'DM Serif Display',serif"}}>"{t.quote}"</p>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
-                <div style={{width:34,height:34,borderRadius:"50%",background:T.surface2,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:T.blueL,border:`1px solid ${T.border2}`,fontFamily:"'JetBrains Mono',monospace",flexShrink:0}}>{t.initials}</div>
+                <div style={{width:34,height:34,borderRadius:"50%",background:`${t.color}20`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:t.color,border:`1px solid ${t.color}40`,fontFamily:"'JetBrains Mono',monospace",flexShrink:0}}>{t.initials}</div>
                 <div><div style={{fontSize:13,fontWeight:600}}>{t.name}</div><div style={{fontSize:11,color:T.muted}}>{t.company}</div></div>
               </div>
             </div>
@@ -1934,13 +2123,14 @@ function LandingPage({onLogin,onIntakeForm,onApply}){
 
     {/* CTA */}
     <section style={{padding:"clamp(48px,7vw,88px) 20px",textAlign:"center",borderTop:`1px solid ${T.border}`,position:"relative",overflow:"hidden"}}>
-      <div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse 70% 60% at 50% 50%,rgba(37,99,235,0.1),transparent 70%)",pointerEvents:"none"}}/>
+      <div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse 80% 70% at 50% 50%,rgba(37,99,235,0.12),transparent 70%)",pointerEvents:"none"}}/>
+      <div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse 40% 40% at 20% 80%,rgba(6,182,212,0.06),transparent 60%)",pointerEvents:"none"}}/>
       <div style={{maxWidth:520,margin:"0 auto",position:"relative",zIndex:1}}>
         <h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:"clamp(26px,4vw,44px)",lineHeight:1.1,letterSpacing:-1.5,marginBottom:14}}>Ready to fill your calendar with real jobs?</h2>
         <p style={{fontSize:14,color:T.offWhite,marginBottom:28,fontWeight:300}}>Join service businesses across Columbus with a qualified, exclusive pipeline.</p>
         <div style={{display:"flex",justifyContent:"center",gap:10,flexWrap:"wrap"}}>
-          <Btn size="lg" onClick={onApply}>Get Started →</Btn>
-          <Btn variant="outline" size="lg" onClick={onApply}>See a Demo</Btn>
+          <Btn size="lg" onClick={onApply}>Apply Now →</Btn>
+          <Btn variant="outline" size="lg" onClick={()=>scrollTo("industries")}>Explore Industries</Btn>
         </div>
       </div>
     </section>
@@ -1950,14 +2140,20 @@ function LandingPage({onLogin,onIntakeForm,onApply}){
       <div style={{maxWidth:1200,margin:"0 auto",width:"100%"}}>
         <div style={{display:"grid",gridTemplateColumns:"2fr repeat(3,1fr)",gap:"clamp(16px,3vw,40px)",marginBottom:36}} className="grid-2-mobile">
           <div>
-            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><LogoMark size={26}/><span style={{fontFamily:"'DM Serif Display',serif",fontSize:17}}>Streamline</span></div>
+            <button onClick={()=>window.scrollTo({top:0,behavior:"smooth"})} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,background:"none",border:"none",cursor:"pointer"}}>
+              <LogoMark size={26}/><span style={{fontFamily:"'DM Serif Display',serif",fontSize:17,color:T.white}}>Streamline</span>
+            </button>
             <p style={{fontSize:13,color:T.muted,lineHeight:1.6,maxWidth:200}}>Qualified leads for service businesses that run on booked jobs.</p>
           </div>
-          {[{title:"Product",links:["How It Works","Features","Pricing","Log In"]},{title:"Company",links:["About","Blog","Careers","Contact"]},{title:"Support",links:["Help Center","FAQ","Onboarding","Status"]}].map(col=>(
+          {[
+            {title:"Industries",links:[["HVAC",()=>onIndustry("hvac")],["Roofing",()=>onIndustry("roofing")],["Plumbing",()=>onIndustry("plumbing")],["Electrical",()=>onIndustry("electrical")]]},
+            {title:"Company",links:[["How It Works",()=>scrollTo("how")],["Features",()=>scrollTo("features")],["Pricing",()=>scrollTo("pricing")],["FAQ",()=>scrollTo("faq")]]},
+            {title:"Contact",links:[["hello@streamline.io",()=>{}],["Apply Now",onApply],["Log In",()=>setShowAuth(true)],["Support",()=>{}]]},
+          ].map(col=>(
             <div key={col.title}>
               <div style={{fontSize:10,fontWeight:600,color:T.offWhite,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:12,fontFamily:"'JetBrains Mono',monospace"}}>{col.title}</div>
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                {col.links.map(l=><a key={l} href="#" style={{fontSize:13,color:T.muted,transition:"color 0.2s"}} onMouseEnter={e=>e.currentTarget.style.color=T.white} onMouseLeave={e=>e.currentTarget.style.color=T.muted}>{l}</a>)}
+                {col.links.map(([l,fn])=><button key={l} onClick={fn} style={{background:"none",border:"none",cursor:"pointer",fontSize:13,color:T.muted,textAlign:"left",transition:"color 0.2s",padding:0}} onMouseEnter={e=>e.currentTarget.style.color=T.white} onMouseLeave={e=>e.currentTarget.style.color=T.muted}>{l}</button>)}
               </div>
             </div>
           ))}
@@ -2834,6 +3030,44 @@ function AdminBillingView({contractors,allBilling,onRefresh,toast}){
 }
 
 // ─── ADMIN STATS ──────────────────────────────────────────────────────────────
+function CampaignURLs(){
+  const base=window.location.origin;
+  const [copied,setCopied]=useState(null);
+  const copy=(k,url)=>{navigator.clipboard.writeText(url);setCopied(k);setTimeout(()=>setCopied(null),2000);};
+  return(
+    <div style={{marginBottom:24}}>
+      <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:12}}>Ad Campaign URLs</div>
+      <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:14,overflow:"hidden"}}>
+        <div style={{padding:"12px 16px",borderBottom:`1px solid ${T.border}`,background:T.surface2,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+          <div>
+            <div style={{fontSize:13,fontWeight:600,marginBottom:2}}>Industry Intake URLs</div>
+            <div style={{fontSize:12,color:T.muted}}>Share these in your Google / Facebook ads. Leads submitted via these URLs are auto-routed to the matching contractors.</div>
+          </div>
+        </div>
+        <div style={{padding:12,display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:8}} className="grid-1-mobile">
+          {Object.entries(INDUSTRIES).map(([k,v])=>{
+            const url=`${base}/?industry=${k}`;
+            return(
+              <div key={k} style={{background:T.surface2,borderRadius:8,padding:"12px 14px",border:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+                <div style={{minWidth:0}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
+                    <span style={{fontSize:15}}>{v.icon}</span>
+                    <span style={{fontSize:13,fontWeight:600,color:T.white}}>{v.label}</span>
+                  </div>
+                  <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:10,color:T.blueL,wordBreak:"break-all"}}>{url}</div>
+                </div>
+                <button onClick={()=>copy(k,url)} style={{background:copied===k?T.green:T.surface3,border:`1px solid ${T.border2}`,borderRadius:6,padding:"5px 10px",cursor:"pointer",color:copied===k?"white":T.muted,fontSize:11,fontWeight:600,flexShrink:0,transition:"all 0.2s",whiteSpace:"nowrap"}}>
+                  {copied===k?"✓ Copied":"Copy"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AdminStats({contractors}){
   const [allLeads,setAllLeads]=useState([]);
   const [loading,setLoading]=useState(true);
@@ -3015,6 +3249,7 @@ function AdminStats({contractors}){
   );
 
   return <div style={{animation:"fadeIn 0.3s ease"}}>
+    <CampaignURLs/>
     {/* Header + date range selector */}
     <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:24,flexWrap:"wrap",gap:12}}>
       <div>
@@ -3684,6 +3919,7 @@ export default function App(){
   const [adminUser,setAdminUser]=useState(null);
   const [intakeInd,setIntakeInd]=useState("hvac");
   const [page2,setPage2]=useState(null); // sub-pages: 'apply'
+  const [industryPage,setIndustryPage]=useState(null);
 
   // Detect ?admin=1 in URL to show admin login
   const isAdminRoute=new URLSearchParams(window.location.search).get("admin")==="1";
@@ -3732,5 +3968,6 @@ export default function App(){
   if(page2==="apply")return <ContractorApplicationForm onBack={()=>setPage2(null)}/>;
   if(page==="intake")return <IntakeForm industryKey={intakeInd} onBack={()=>setPage("landing")}/>;
   if(page==="dashboard"&&user)return <Dashboard user={user} onLogout={handleLogout}/>;
-  return <LandingPage onLogin={u=>{setUser(u);setPage("dashboard");}} onIntakeForm={goIntake} onApply={()=>setPage2("apply")}/>;
+  if(industryPage)return <IndustryPage industryKey={industryPage} onBack={()=>{setIndustryPage(null);}} onApply={()=>setPage2("apply")}/>;
+  return <LandingPage onLogin={u=>{setUser(u);setPage("dashboard");}} onIntakeForm={goIntake} onApply={()=>setPage2("apply")} onIndustry={k=>{setIndustryPage(k);window.scrollTo(0,0);}}/>;
 }
