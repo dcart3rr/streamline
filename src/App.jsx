@@ -869,6 +869,178 @@ function LeadDetail({lead,onClose,onStatusChange,calendlyUrl}){
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
 
 // Settings Panel
+// ─── GROWTH PLAN FEATURES ────────────────────────────────────────────────────
+
+// 1. CRM Export (Growth only)
+function CRMExport({leads, user, toast}){
+  const isGrowth = user.plan === "Growth";
+  const [exporting, setExporting] = useState(false);
+
+  const exportCSV = () => {
+    setExporting(true);
+    const headers = ["Name","Phone","Email","Industry","Issue","Budget","Urgency","Score","Tier","Status","Job Value","Completed","Submitted","Source"];
+    const rows = leads.map(l => [
+      l.name||"",
+      l.phone||"",
+      l.email||"",
+      l.industry||"",
+      l.is_name||l.issue_type||"",
+      (l.budget||"").replace(/_/g," "),
+      l.urgency||"",
+      l.score||0,
+      l.tier||"",
+      l.status||"",
+      l.job_value||"",
+      l.completed_at||"",
+      new Date(l.created_at).toLocaleDateString(),
+      l.source||"",
+    ]);
+    const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], {type:"text/csv"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `streamline-leads-${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setTimeout(() => setExporting(false), 800);
+    toast({message:"CSV downloaded", type:"success"});
+  };
+
+  if(!isGrowth) return(
+    <div style={{background:"rgba(167,139,250,0.06)",border:"1px solid rgba(167,139,250,0.2)",borderRadius:12,padding:"18px 20px",display:"flex",alignItems:"center",gap:14}}>
+      <span style={{fontSize:22,flexShrink:0}}>🔒</span>
+      <div>
+        <div style={{fontSize:13,fontWeight:600,color:"#A78BFA",marginBottom:3}}>CRM Export — Growth Plan</div>
+        <div style={{fontSize:12,color:T.muted}}>Export your full lead history as CSV. Upgrade to Growth to unlock.</div>
+      </div>
+    </div>
+  );
+
+  return(
+    <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:12,padding:"18px 20px"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
+        <div>
+          <div style={{fontSize:13,fontWeight:600,color:T.white,marginBottom:3}}>Export Lead Data</div>
+          <div style={{fontSize:12,color:T.muted}}>{leads.length} leads · CSV format · all fields included</div>
+        </div>
+        <button onClick={exportCSV} disabled={exporting||!leads.length} style={{background:`linear-gradient(135deg,#7C3AED,#A78BFA)`,border:"none",borderRadius:8,padding:"9px 18px",cursor:leads.length?"pointer":"not-allowed",color:"white",fontSize:13,fontWeight:600,display:"flex",alignItems:"center",gap:6,opacity:exporting?0.7:1}}>
+          {exporting?<><Spinner size={13}/> Exporting…</>:"⬇ Export CSV"}
+        </button>
+      </div>
+      <div style={{marginTop:12,display:"flex",gap:8,flexWrap:"wrap"}}>
+        {["Name & Contact","Lead Score","Budget & Urgency","Job Value","Close Status"].map(f=>(
+          <span key={f} style={{fontSize:11,background:"rgba(167,139,250,0.1)",color:"#A78BFA",border:"1px solid rgba(167,139,250,0.2)",borderRadius:4,padding:"2px 8px"}}>{f}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// 2. Dedicated Account Manager (Growth only)
+function AccountManager({user}){
+  const isGrowth = user.plan === "Growth";
+  if(!isGrowth) return(
+    <div style={{background:"rgba(167,139,250,0.06)",border:"1px solid rgba(167,139,250,0.2)",borderRadius:12,padding:"18px 20px",display:"flex",alignItems:"center",gap:14}}>
+      <span style={{fontSize:22,flexShrink:0}}>🔒</span>
+      <div>
+        <div style={{fontSize:13,fontWeight:600,color:"#A78BFA",marginBottom:3}}>Dedicated Account Manager — Growth Plan</div>
+        <div style={{fontSize:12,color:T.muted}}>Get a named contact at Streamline who knows your business. Upgrade to Growth to unlock.</div>
+      </div>
+    </div>
+  );
+  return(
+    <div style={{background:T.surface,border:`1px solid rgba(167,139,250,0.3)`,borderRadius:12,padding:"18px 20px"}}>
+      <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:"#A78BFA",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:12}}>Your Account Manager</div>
+      <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:16}}>
+        <div style={{width:48,height:48,borderRadius:"50%",background:"linear-gradient(135deg,#7C3AED,#A78BFA)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:700,color:"white",flexShrink:0}}>DS</div>
+        <div>
+          <div style={{fontSize:15,fontWeight:700,color:T.white,marginBottom:2}}>Derek S.</div>
+          <div style={{fontSize:12,color:T.muted}}>Growth Account Manager · Streamline</div>
+        </div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
+        {[
+          {icon:"📧",label:"Email",value:"derek@streamline.io",href:"mailto:derek@streamline.io"},
+          {icon:"📞",label:"Direct line",value:"(614) 555-0190",href:"tel:6145550190"},
+          {icon:"📅",label:"Book a call",value:"15 or 30 min slots",href:"mailto:derek@streamline.io?subject=Book a call"},
+          {icon:"💬",label:"Response time",value:"Within 4 business hours",href:null},
+        ].map(c=>(
+          <div key={c.label} style={{background:T.surface2,borderRadius:8,padding:"10px 12px"}}>
+            <div style={{fontSize:10,color:T.muted,marginBottom:3}}>{c.icon} {c.label}</div>
+            {c.href
+              ?<a href={c.href} style={{fontSize:12,color:"#A78BFA",fontWeight:500,textDecoration:"none"}}>{c.value}</a>
+              :<div style={{fontSize:12,color:T.offWhite,fontWeight:500}}>{c.value}</div>
+            }
+          </div>
+        ))}
+      </div>
+      <div style={{background:"rgba(167,139,250,0.08)",border:"1px solid rgba(167,139,250,0.2)",borderRadius:8,padding:"10px 12px",fontSize:12,color:T.offWhite,lineHeight:1.6}}>
+        Derek can help with: campaign strategy, ad URL setup, reviewing your close rate, troubleshooting, or anything else you need to get more out of Streamline.
+      </div>
+    </div>
+  );
+}
+
+// 3. Seasonal Campaign Boosts (Growth only)
+function SeasonalBoosts({user, toast}){
+  const isGrowth = user.plan === "Growth";
+  const month = new Date().getMonth(); // 0=Jan
+  const currentSeason = month>=2&&month<=4?"spring":month>=5&&month<=7?"summer":month>=8&&month<=10?"fall":"winter";
+
+  const campaigns = [
+    {id:"spring_hvac",season:"spring",name:"Spring AC Tune-Up Push",months:"Mar–May",icon:"🌸",industry:"HVAC",desc:"Pre-season AC checkups and system replacements surge in spring. Boosted placement in routing queue.",active:currentSeason==="spring"},
+    {id:"summer_hvac",season:"summer",name:"Summer Emergency AC",months:"Jun–Aug",icon:"☀️",industry:"HVAC",desc:"Emergency AC repair leads peak in summer heat. Priority emergency routing enabled.",active:currentSeason==="summer"},
+    {id:"fall_roofing",season:"fall",name:"Fall Roof & Gutter Season",months:"Sep–Nov",icon:"🍂",industry:"Roofing",desc:"Post-summer inspection and storm-season prep drives high-value roofing requests.",active:currentSeason==="fall"},
+    {id:"winter_plumbing",season:"winter",name:"Winter Pipe & Heating",months:"Dec–Feb",icon:"❄️",industry:"Plumbing",desc:"Frozen pipes, heating failures, and emergency plumbing surges in winter months.",active:currentSeason==="winter"},
+  ];
+
+  if(!isGrowth) return(
+    <div style={{background:"rgba(167,139,250,0.06)",border:"1px solid rgba(167,139,250,0.2)",borderRadius:12,padding:"18px 20px",display:"flex",alignItems:"center",gap:14}}>
+      <span style={{fontSize:22,flexShrink:0}}>🔒</span>
+      <div>
+        <div style={{fontSize:13,fontWeight:600,color:"#A78BFA",marginBottom:3}}>Seasonal Campaign Boosts — Growth Plan</div>
+        <div style={{fontSize:12,color:T.muted}}>Automatic volume increases during peak demand seasons for your industry. Upgrade to Growth to unlock.</div>
+      </div>
+    </div>
+  );
+
+  const activeCampaign = campaigns.find(c=>c.active&&c.industry===user.industry);
+
+  return(
+    <div style={{background:T.surface,border:`1px solid rgba(167,139,250,0.3)`,borderRadius:12,padding:"18px 20px"}}>
+      <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:"#A78BFA",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:12}}>Seasonal Campaign Boosts</div>
+      {activeCampaign&&(
+        <div style={{background:"rgba(16,185,129,0.08)",border:"1px solid rgba(16,185,129,0.25)",borderRadius:10,padding:"12px 14px",marginBottom:14,display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:20}}>{activeCampaign.icon}</span>
+          <div>
+            <div style={{fontSize:13,fontWeight:600,color:T.green,marginBottom:2}}>🟢 Active Now: {activeCampaign.name}</div>
+            <div style={{fontSize:12,color:T.muted}}>{activeCampaign.desc}</div>
+          </div>
+        </div>
+      )}
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {campaigns.map(c=>(
+          <div key={c.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",background:c.active?`rgba(16,185,129,0.06)`:T.surface2,borderRadius:8,border:`1px solid ${c.active?"rgba(16,185,129,0.2)":T.border}`}}>
+            <span style={{fontSize:18,flexShrink:0}}>{c.icon}</span>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:13,fontWeight:600,color:c.active?T.green:T.offWhite,marginBottom:1}}>{c.name}</div>
+              <div style={{fontSize:11,color:T.muted}}>{c.months} · {c.industry}</div>
+            </div>
+            <div>
+              {c.active
+                ?<span style={{fontSize:10,background:"rgba(16,185,129,0.15)",color:T.green,border:"1px solid rgba(16,185,129,0.3)",borderRadius:4,padding:"2px 8px",fontWeight:600}}>ACTIVE</span>
+                :<span style={{fontSize:10,background:T.surface3,color:T.muted,borderRadius:4,padding:"2px 8px"}}>{c.months}</span>
+              }
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{marginTop:12,fontSize:11,color:T.muted,lineHeight:1.6}}>Boosts are automatic — no action needed. During your industry's peak season, your account is moved to the front of the routing queue for that lead type. Contact your account manager to customize timing.</div>
+    </div>
+  );
+}
+
 function SettingsPanel({user,onSave,toast}){
   const [form,setForm]=useState({
     company:user.company||"",
@@ -1018,6 +1190,17 @@ function SettingsPanel({user,onSave,toast}){
 
     <Btn onClick={save} disabled={saving}>{saving?<span style={{display:"flex",alignItems:"center",gap:8}}><Spinner size={14}/>Saving…</span>:"Save Settings"}</Btn>
 
+    {/* Growth Plan Features */}
+    <div style={{height:1,background:T.border}}/>
+    <div>
+      <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Growth Plan Features</div>
+      <div style={{fontSize:12,color:T.muted,marginBottom:14}}>{user.plan==="Growth"?"Features included with your Growth plan.":"Upgrade to Growth to unlock these features."}</div>
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        <AccountManager user={user}/>
+        <SeasonalBoosts user={user} toast={toast}/>
+      </div>
+    </div>
+
     {/* ── Plan Change Modal ── */}
     <Modal open={showPlanChange} onClose={()=>setShowPlanChange(false)} title="Change Plan">
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
@@ -1067,12 +1250,13 @@ function SettingsPanel({user,onSave,toast}){
 }
 
 // Analytics View
-function AnalyticsView({leads}){
+function AnalyticsView({leads, user}){
   const total=leads.length;
   const won=leads.filter(l=>l.status==="won").length;
   const lost=leads.filter(l=>l.status==="lost").length;
   const active=leads.filter(l=>l.status==="new"||l.status==="contacted").length;
   const closeRate=total>0?Math.round((won/total)*100):0;
+  const isGrowth=user?.plan==="Growth";
   const avgScore=total>0?Math.round(leads.reduce((s,l)=>s+l.score,0)/total):0;
   const hotLeads=leads.filter(l=>l.tier==="hot");
   const warmLeads=leads.filter(l=>l.tier==="warm");
@@ -1122,6 +1306,9 @@ function AnalyticsView({leads}){
       <h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:"clamp(22px,3vw,28px)",letterSpacing:-1}}>Analytics</h2>
       <span style={{fontSize:12,color:T.muted}}>All time · {total} leads</span>
     </div>
+
+    {/* CRM Export — Growth feature */}
+    {user&&<div style={{marginBottom:20}}><CRMExport leads={leads} user={user} toast={()=>{}}/></div>}
 
     {/* Top KPIs */}
     <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:16}} className="grid-2-mobile">
@@ -1442,7 +1629,7 @@ function Dashboard({user,onLogout}){
           <style>{`@media(max-width:768px){.hide-mobile{display:none!important}#mobile-cards{display:flex!important}}`}</style>
         </div>
       ):view==="analytics"?(
-        <AnalyticsView leads={leads}/>
+        <AnalyticsView leads={leads} user={currentUser}/>
       ):(
         <div style={{animation:"fadeIn 0.3s ease"}}>
           <h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:"clamp(20px,3vw,26px)",letterSpacing:-0.8,marginBottom:5}}>Settings</h2>
@@ -2065,12 +2252,12 @@ function LandingPage({onLogin,onIntakeForm,onApply,onIndustry}){
         <SE c="Pricing"/>
         <SH c="Pay for what works." center/>
         <p style={{fontSize:14,color:T.offWhite,lineHeight:1.7,fontWeight:300,maxWidth:440,margin:"0 auto 36px"}}>Low monthly base keeps costs predictable. Performance fee only when you close a job.</p>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,maxWidth:860,margin:"0 auto"}} className="grid-1-mobile">
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,maxWidth:860,margin:"0 auto",alignItems:"stretch"}} className="grid-1-mobile">
           {[
             {plan:"Starter",price:"299",perf:"150",popular:false,features:["Exclusive leads delivered to your dashboard","Intelligent intake and lead scoring","Instant estimate generation for each lead","In-app notifications on every new lead","Win/loss tracking and close rate analytics","Dedicated intake URL for your ads"]},
             {plan:"Growth",price:"499",perf:"100",popular:true,features:["Everything in Starter","Priority lead queue — first access in your market","Lower performance fee per closed job","CRM integrations and data export","Dedicated account manager","Seasonal campaign volume boosts"]},
           ].map(p=>(
-            <div key={p.plan} style={{background:p.popular?`linear-gradient(135deg,rgba(37,99,235,0.1),${T.surface})`:T.surface,border:`1px solid ${p.popular?T.blue:T.border2}`,borderRadius:16,padding:"clamp(20px,3vw,32px)",position:"relative",transition:"transform 0.22s",textAlign:"left"}} onMouseEnter={e=>e.currentTarget.style.transform="translateY(-3px)"} onMouseLeave={e=>e.currentTarget.style.transform="none"}>
+            <div key={p.plan} style={{background:p.popular?`linear-gradient(135deg,rgba(37,99,235,0.1),${T.surface})`:T.surface,border:`1px solid ${p.popular?T.blue:T.border2}`,borderRadius:16,padding:"clamp(20px,3vw,32px)",position:"relative",transition:"transform 0.22s",textAlign:"left",display:"flex",flexDirection:"column"}} onMouseEnter={e=>e.currentTarget.style.transform="translateY(-3px)"} onMouseLeave={e=>e.currentTarget.style.transform="none"}>
               {p.popular&&<><div style={{display:"inline-flex",background:T.blue,color:"white",fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:4,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:12,fontFamily:"'JetBrains Mono',monospace"}}>Most Popular</div><div style={{position:"absolute",top:0,left:0,right:0,height:2,background:`linear-gradient(90deg,transparent,${T.blue},${T.cyan},transparent)`}}/></>}
               <div style={{fontSize:11,fontWeight:600,color:T.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6,fontFamily:"'JetBrains Mono',monospace"}}>{p.plan}</div>
               <div style={{display:"flex",alignItems:"baseline",gap:2,marginBottom:2}}>
@@ -2080,7 +2267,7 @@ function LandingPage({onLogin,onIntakeForm,onApply,onIndustry}){
               </div>
               <div style={{fontSize:11,color:T.blueL,fontFamily:"'JetBrains Mono',monospace",marginBottom:20,padding:"5px 10px",background:"rgba(37,99,235,0.1)",borderRadius:6,border:"1px solid rgba(37,99,235,0.2)",display:"inline-block"}}>+ ${p.perf} performance fee per closed job</div>
               <div style={{height:1,background:T.border,marginBottom:18}}/>
-              <div style={{display:"flex",flexDirection:"column",gap:9,marginBottom:24}}>
+              <div style={{display:"flex",flexDirection:"column",gap:9,marginBottom:24,flex:1}}>
                 {p.features.map(f=><div key={f} style={{display:"flex",alignItems:"flex-start",gap:8,fontSize:13,color:T.offWhite}}><span style={{color:T.blueL,flexShrink:0}}>›</span>{f}</div>)}
               </div>
               <button onClick={onApply} style={{width:"100%",padding:"13px",borderRadius:10,fontSize:14,fontWeight:600,cursor:"pointer",background:p.popular?T.blue:"none",color:p.popular?"white":T.offWhite,border:p.popular?"none":`1px solid ${T.border2}`,transition:"all 0.2s",touchAction:"manipulation"}}>Apply Now</button>
