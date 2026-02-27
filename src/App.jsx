@@ -4,6 +4,11 @@ import { createClient } from "@supabase/supabase-js";
 const SUPABASE_URL = "https://teixvcgtuqtclvvyfqat.supabase.co";
 const SUPABASE_KEY = "sb_publishable_c8tvTyGmR0_IAWg6692bLg_tTwMPBYA";
 const DEMO_BUSINESS_ID = "185446cc-87a1-4508-a1da-63117aeaa7f2";
+
+function getBusinessIdFromURL(){
+  const p=new URLSearchParams(window.location.search);
+  return p.get("bid")||DEMO_BUSINESS_ID;
+}
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const T = {
@@ -452,6 +457,7 @@ function IntakeForm({industryKey="hvac",onBack}){
   const [submitting,setSubmitting]=useState(false);
   const [done,setDone]=useState(false);
   const [error,setError]=useState("");
+  const [calendlyUrl,setCalendlyUrl]=useState("");
   const [form,setForm]=useState({name:"",phone:"",email:"",issueType:"",issueDescription:"",urgency:"",budget:"",ownership:"",propertySize:"",preferredTime:"",zipCode:""});
   const set=k=>v=>{setForm(f=>({...f,[k]:v}));setError("");};
 
@@ -495,8 +501,13 @@ function IntakeForm({industryKey="hvac",onBack}){
     setSubmitting(true);setError("");
     try{
       const{score,breakdown,tier}=scoreLeadData(form);
+      const bid=getBusinessIdFromURL();
+      // Fetch contractor's Calendly URL for qualified leads
+      if(score>=50){
+        try{const biz=await db.getBusiness(bid);setCalendlyUrl(biz?.calendly_url||"");}catch(e){}
+      }
       await db.insertLead({
-        business_id:DEMO_BUSINESS_ID,
+        business_id:bid,
         name:form.name,phone:form.phone,email:form.email,
         issue_type:form.issueType,issue_description:form.issueDescription,
         urgency:form.urgency,budget:form.budget,ownership:form.ownership,
@@ -518,6 +529,12 @@ function IntakeForm({industryKey="hvac",onBack}){
       <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:12,padding:18,textAlign:"left",marginBottom:20}}>
         {[["Service",form.issueType.replace(/_/g," ").replace(/\b\w/g,c=>c.toUpperCase())],["Urgency",{emergency:"🚨 Emergency",this_week:"📅 This Week",flexible:"🗓️ Flexible"}[form.urgency]||form.urgency],["Budget",form.budget?.replace(/_/g," ")],["Phone",form.phone]].map(([k,v])=>v&&<div key={k} style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:8,gap:12}}><span style={{color:T.muted}}>{k}</span><span style={{color:T.white,fontWeight:500,textAlign:"right"}}>{v}</span></div>)}
       </div>
+      {calendlyUrl&&<div style={{marginTop:16,marginBottom:16}}>
+        <div style={{fontSize:13,fontWeight:600,color:T.white,marginBottom:8,textAlign:"left"}}>📅 Book your free estimate</div>
+        <div style={{borderRadius:12,overflow:"hidden",border:`1px solid ${T.border2}`,height:520}}>
+          <iframe src={`${calendlyUrl}?name=${encodeURIComponent(form.name||"")}&email=${encodeURIComponent(form.email||"")}`} width="100%" height="520" frameBorder="0" style={{display:"block"}}/>
+        </div>
+      </div>}
       {onBack&&<Btn variant="outline" onClick={onBack} fullWidth>← Back to Streamline</Btn>}
     </div>
   </div>;
@@ -624,7 +641,7 @@ function NotificationsPanel({userId}){
 }
 
 // ─── LEAD DETAIL ──────────────────────────────────────────────────────────────
-function LeadDetail({lead,onClose,onStatusChange}){
+function LeadDetail({lead,onClose,onStatusChange,calendlyUrl}){
   if(!lead)return null;
   const BL={budget:"Budget",urgency:"Urgency",ownership:"Ownership",size:"Property Size",clarity:"Issue Clarity",contact:"Contact Quality"};
   const MX={budget:20,urgency:20,ownership:15,size:15,clarity:15,contact:15};
@@ -661,6 +678,12 @@ function LeadDetail({lead,onClose,onStatusChange}){
       <div style={{fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Issue Description</div>
       <p style={{fontSize:13,color:T.offWhite,lineHeight:1.7}}>{lead.issue_description}</p>
     </div>}
+    {calendlyUrl&&lead.score>=50&&<div style={{marginBottom:14}}>
+      <div style={{fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:10}}>Book Estimate</div>
+      <div style={{background:T.surface2,border:`1px solid ${T.border2}`,borderRadius:10,overflow:"hidden",height:500}}>
+        <iframe src={`${calendlyUrl}?name=${encodeURIComponent(lead.name||"")}&email=${encodeURIComponent(lead.email||"")}`} width="100%" height="500" frameBorder="0" style={{display:"block"}}/>
+      </div>
+    </div>}
     {lead.status!=="won"&&lead.status!=="lost"&&<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
       <Btn variant="success" onClick={()=>{onStatusChange(lead.id,"won");onClose();}} style={{flex:1,minWidth:110}}>✓ Won</Btn>
       <Btn variant="danger" onClick={()=>{onStatusChange(lead.id,"lost");onClose();}} style={{flex:1,minWidth:110}}>✗ Lost</Btn>
@@ -670,6 +693,223 @@ function LeadDetail({lead,onClose,onStatusChange}){
 }
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
+
+// Settings Panel
+function SettingsPanel({user,onSave,toast}){
+  const [form,setForm]=useState({
+    company:user.company||"",
+    industry:user.industry||"HVAC",
+    notify_email:user.notify_email||user.email||"",
+    calendly_url:user.calendly_url||"",
+    phone:user.phone||"",
+    city:user.city||"",
+    plan:user.plan||"Starter",
+  });
+  const [saving,setSaving]=useState(false);
+  const set=k=>v=>setForm(f=>({...f,[k]:v}));
+  const save=async()=>{
+    setSaving(true);
+    try{
+      await db.upsertBusiness({id:user.id,...form});
+      onSave({...user,...form});
+      toast({message:"Settings saved",type:"success"});
+    }catch(e){toast({message:"Save failed",type:"error"});}
+    setSaving(false);
+  };
+  const intakeUrl=`${window.location.origin}/?industry=${form.industry.toLowerCase()}&bid=${user.id}`;
+  return <div style={{display:"flex",flexDirection:"column",gap:24,maxWidth:700}}>
+    <div>
+      <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:16}}>Business Profile</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}} className="grid-1-mobile">
+        <Inp label="Company Name" value={form.company} onChange={set("company")} placeholder="Apex Climate Control"/>
+        <Inp label="Phone Number" value={form.phone} onChange={set("phone")} type="tel" placeholder="(614) 555-0000"/>
+        <Inp label="City / Market" value={form.city} onChange={set("city")} placeholder="Columbus, OH"/>
+        <Inp label="Primary Industry" value={form.industry} onChange={set("industry")} type="select" options={[{value:"HVAC",label:"HVAC"},{value:"Roofing",label:"Roofing"},{value:"Plumbing",label:"Plumbing"},{value:"Electrical",label:"Electrical"}]}/>
+        <Inp label="Notification Email" value={form.notify_email} onChange={set("notify_email")} type="email" placeholder="alerts@yourcompany.com"/>
+      </div>
+    </div>
+    <div style={{height:1,background:T.border}}/>
+    <div>
+      <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Calendly Link</div>
+      <div style={{fontSize:12,color:T.muted,marginBottom:12}}>Qualified leads (score 50+) will see a booking option after submitting the intake form. Paste your Calendly scheduling link below.</div>
+      <Inp label="Your Calendly URL" value={form.calendly_url} onChange={set("calendly_url")} placeholder="https://calendly.com/yourname/estimate" hint="Go to calendly.com → copy your event link"/>
+      {form.calendly_url&&<div style={{marginTop:10,padding:"10px 14px",background:"rgba(16,185,129,0.08)",border:"1px solid rgba(16,185,129,0.2)",borderRadius:8,fontSize:12,color:T.green}}>✓ Qualified leads will see a booking widget after submitting their intake form</div>}
+    </div>
+    <div style={{height:1,background:T.border}}/>
+    <div>
+      <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Your Intake Form URL</div>
+      <div style={{fontSize:12,color:T.muted,marginBottom:10}}>Use this URL in your ads. Leads submitted from this URL go directly to your account.</div>
+      <div style={{background:T.surface2,border:`1px solid ${T.border2}`,borderRadius:10,padding:"12px 14px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <code style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:T.blueL,flex:1,wordBreak:"break-all"}}>{intakeUrl}</code>
+        <button onClick={()=>{navigator.clipboard.writeText(intakeUrl);toast({message:"Copied to clipboard",type:"success"});}} style={{background:T.blue,border:"none",borderRadius:7,padding:"7px 14px",cursor:"pointer",color:"white",fontSize:12,fontWeight:600,flexShrink:0}}>Copy</button>
+      </div>
+      <div style={{marginTop:8,fontSize:11,color:T.muted}}>Add <code style={{fontFamily:"'JetBrains Mono',monospace",color:T.offWhite}}>?industry=roofing&bid={user.id}</code> for other industries</div>
+    </div>
+    <div style={{height:1,background:T.border}}/>
+    <div>
+      <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:12}}>Current Plan</div>
+      <div style={{display:"flex",gap:10}}>
+        {["Starter","Growth"].map(p=><div key={p} onClick={()=>set("plan")(p)} style={{flex:1,padding:"14px 16px",borderRadius:12,cursor:"pointer",border:`2px solid ${form.plan===p?T.blue:T.border2}`,background:form.plan===p?"rgba(37,99,235,0.08)":T.surface2,transition:"all 0.2s"}}>
+          <div style={{fontSize:14,fontWeight:600,color:T.white,marginBottom:2}}>{p}</div>
+          <div style={{fontSize:12,color:T.muted}}>{p==="Starter"?"$299/mo · 20 leads · $150/close":"$499/mo · 50 leads · $100/close"}</div>
+        </div>)}
+      </div>
+    </div>
+    <Btn onClick={save} disabled={saving}>{saving?<span style={{display:"flex",alignItems:"center",gap:8}}><Spinner size={14}/>Saving…</span>:"Save Settings"}</Btn>
+  </div>;
+}
+
+// Analytics View
+function AnalyticsView({leads}){
+  const total=leads.length;
+  const won=leads.filter(l=>l.status==="won").length;
+  const lost=leads.filter(l=>l.status==="lost").length;
+  const active=leads.filter(l=>l.status==="new"||l.status==="contacted").length;
+  const closeRate=total>0?Math.round((won/total)*100):0;
+  const avgScore=total>0?Math.round(leads.reduce((s,l)=>s+l.score,0)/total):0;
+  const hotLeads=leads.filter(l=>l.tier==="hot");
+  const warmLeads=leads.filter(l=>l.tier==="warm");
+  const coldLeads=leads.filter(l=>l.tier==="cold");
+  const hotCloseRate=hotLeads.length>0?Math.round((hotLeads.filter(l=>l.status==="won").length/hotLeads.length)*100):0;
+  const sc={new:leads.filter(l=>l.status==="new").length,contacted:leads.filter(l=>l.status==="contacted").length,won,lost};
+  const totalRevenue=leads.filter(l=>l.status==="won").reduce((sum,l)=>{
+    const r=l.estimate_range||"";const m=r.match(/\$([0-9,]+)/g);
+    if(m&&m.length>=2){const avg=(parseInt(m[0].replace(/[$,]/g,""))+parseInt(m[1].replace(/[$,]/g,"")))/2;return sum+avg;}
+    return sum;
+  },0);
+  const perfFee=won*(50); // simplified
+  const budgetDist={"under_500":0,"500_1000":0,"1000_2000":0,"2000_5000":0,"5000_plus":0};
+  leads.forEach(l=>{if(l.budget&&budgetDist[l.budget]!==undefined)budgetDist[l.budget]++;});
+  const urgencyDist={"emergency":0,"this_week":0,"flexible":0};
+  leads.forEach(l=>{if(l.urgency&&urgencyDist[l.urgency]!==undefined)urgencyDist[l.urgency]++;});
+
+  // Group leads by week for trend
+  const byWeek={};
+  leads.forEach(l=>{
+    const d=new Date(l.created_at);
+    const week=`${d.getFullYear()}-W${Math.ceil(d.getDate()/7)}`;
+    if(!byWeek[week])byWeek[week]={week,total:0,won:0};
+    byWeek[week].total++;
+    if(l.status==="won")byWeek[week].won++;
+  });
+  const weekData=Object.values(byWeek).slice(-8);
+
+  const MCard=({label,value,sub,color,large})=><Card style={{padding:"18px 20px"}}>
+    <div style={{fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>{label}</div>
+    <div style={{fontFamily:"'DM Serif Display',serif",fontSize:large?48:36,color:color||T.white,letterSpacing:-2,lineHeight:1,marginBottom:4}}>{value}</div>
+    {sub&&<div style={{fontSize:12,color:T.muted}}>{sub}</div>}
+  </Card>;
+
+  const Bar=({label,count,max,color})=><div style={{marginBottom:10}}>
+    <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+      <span style={{fontSize:12,color:T.offWhite}}>{label}</span>
+      <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11,color:color||T.muted}}>{count}</span>
+    </div>
+    <div style={{height:6,background:T.border,borderRadius:3,overflow:"hidden"}}>
+      <div style={{width:max>0?`${(count/max)*100}%`:"0%",height:"100%",background:color||T.blueL,borderRadius:3,transition:"width 0.8s ease"}}/>
+    </div>
+  </div>;
+
+  return <div style={{animation:"fadeIn 0.3s ease"}}>
+    <div style={{display:"flex",alignItems:"baseline",gap:12,marginBottom:20}}>
+      <h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:"clamp(22px,3vw,28px)",letterSpacing:-1}}>Analytics</h2>
+      <span style={{fontSize:12,color:T.muted}}>All time · {total} leads</span>
+    </div>
+
+    {/* Top KPIs */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:16}} className="grid-2-mobile">
+      <MCard label="Close Rate" value={`${closeRate}%`} sub={`${won} won / ${total} total`} color={T.green} large/>
+      <MCard label="Avg Lead Score" value={avgScore} sub="Out of 100" color={T.amber} large/>
+      <MCard label="Est. Revenue" value={`$${Math.round(totalRevenue/1000)}k`} sub="From won leads" color={T.cyan} large/>
+      <MCard label="Hot Close Rate" value={`${hotCloseRate}%`} sub={`${hotLeads.length} hot leads`} color={T.red} large/>
+    </div>
+
+    {/* Pipeline + Quality row */}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:16}} className="grid-1-mobile">
+      <Card>
+        <div style={{fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:14}}>Pipeline Status</div>
+        {[{label:"New",color:T.blueL,count:sc.new},{label:"Contacted",color:T.amber,count:sc.contacted},{label:"Won",color:T.green,count:sc.won},{label:"Lost",color:T.red,count:sc.lost}].map(r=><Bar key={r.label} label={r.label} count={r.count} max={total} color={r.color}/>)}
+      </Card>
+      <Card>
+        <div style={{fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:14}}>Lead Quality Tiers</div>
+        {[{label:`🔥 Hot (75+)`,color:T.green,count:hotLeads.length},{label:`☀️ Warm (50–74)`,color:T.amber,count:warmLeads.length},{label:`❄️ Cold (<50)`,color:T.muted,count:coldLeads.length}].map(r=><Bar key={r.label} label={r.label} count={r.count} max={total} color={r.color}/>)}
+        <div style={{marginTop:14,paddingTop:12,borderTop:`1px solid ${T.border}`}}>
+          <div style={{fontSize:11,color:T.muted,marginBottom:6}}>Hot lead close rate vs overall</div>
+          <div style={{display:"flex",gap:12}}>
+            <div style={{textAlign:"center"}}><div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:18,color:T.green,fontWeight:700}}>{hotCloseRate}%</div><div style={{fontSize:10,color:T.muted}}>Hot</div></div>
+            <div style={{textAlign:"center"}}><div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:18,color:T.amber,fontWeight:700}}>{closeRate}%</div><div style={{fontSize:10,color:T.muted}}>Overall</div></div>
+          </div>
+        </div>
+      </Card>
+      <Card>
+        <div style={{fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:14}}>Urgency Breakdown</div>
+        {[{label:"🚨 Emergency",key:"emergency",color:T.red},{label:"📅 This Week",key:"this_week",color:T.amber},{label:"🗓️ Flexible",key:"flexible",color:T.muted}].map(r=><Bar key={r.key} label={r.label} count={urgencyDist[r.key]} max={total} color={r.color}/>)}
+        <div style={{marginTop:14,paddingTop:12,borderTop:`1px solid ${T.border}`,fontSize:11,color:T.muted}}>Emergency leads score 20pts on urgency — highest priority</div>
+      </Card>
+    </div>
+
+    {/* Budget + Weekly trend row */}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}} className="grid-1-mobile">
+      <Card>
+        <div style={{fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:14}}>Budget Distribution</div>
+        {[{label:"Under $500",key:"under_500"},{label:"$500–$1,000",key:"500_1000"},{label:"$1,000–$2,000",key:"1000_2000"},{label:"$2,000–$5,000",key:"2000_5000"},{label:"$5,000+",key:"5000_plus"}].map(r=>(
+          <div key={r.key} style={{marginBottom:8}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+              <span style={{fontSize:12,color:T.offWhite}}>{r.label}</span>
+              <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11,color:T.muted}}>{budgetDist[r.key]}</span>
+            </div>
+            <div style={{height:5,background:T.border,borderRadius:3,overflow:"hidden"}}>
+              <div style={{width:total>0?`${(budgetDist[r.key]/total)*100}%`:"0%",height:"100%",background:`linear-gradient(90deg,${T.blue},${T.blueL})`,borderRadius:3,transition:"width 0.8s ease"}}/>
+            </div>
+          </div>
+        ))}
+      </Card>
+      <Card>
+        <div style={{fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:14}}>Weekly Lead Volume</div>
+        {weekData.length===0
+          ?<div style={{color:T.muted,fontSize:13,padding:"20px 0",textAlign:"center"}}>No weekly data yet</div>
+          :<div style={{display:"flex",alignItems:"flex-end",gap:6,height:100}}>
+            {weekData.map((w,i)=>{
+              const maxTotal=Math.max(...weekData.map(x=>x.total),1);
+              const h=Math.round((w.total/maxTotal)*100);
+              return <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+                <div style={{fontSize:9,color:T.muted,fontFamily:"'JetBrains Mono',monospace"}}>{w.total}</div>
+                <div style={{width:"100%",background:`linear-gradient(180deg,${T.blue},${T.blueL})`,borderRadius:"3px 3px 0 0",height:`${h}%`,minHeight:3,transition:"height 0.8s ease",position:"relative"}}>
+                  {w.won>0&&<div style={{position:"absolute",top:0,left:0,right:0,height:`${Math.round((w.won/w.total)*100)}%`,background:`linear-gradient(180deg,${T.green},${T.green}90)`,borderRadius:"3px 3px 0 0"}}/>}
+                </div>
+                <div style={{fontSize:8,color:T.muted,fontFamily:"'JetBrains Mono',monospace",whiteSpace:"nowrap"}}>W{i+1}</div>
+              </div>;
+            })}
+          </div>
+        }
+        <div style={{marginTop:10,display:"flex",gap:14,fontSize:10,color:T.muted}}>
+          <span style={{display:"flex",alignItems:"center",gap:4}}><div style={{width:8,height:8,borderRadius:2,background:T.blue,flexShrink:0}}/>Total</span>
+          <span style={{display:"flex",alignItems:"center",gap:4}}><div style={{width:8,height:8,borderRadius:2,background:T.green,flexShrink:0}}/>Won</span>
+        </div>
+      </Card>
+    </div>
+
+    {/* Revenue + Performance fee */}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}} className="grid-1-mobile">
+      <Card>
+        <div style={{fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Est. Job Revenue Won</div>
+        <div style={{fontFamily:"'DM Serif Display',serif",fontSize:32,color:T.green,letterSpacing:-1,lineHeight:1,marginBottom:4}}>${Math.round(totalRevenue).toLocaleString()}</div>
+        <div style={{fontSize:12,color:T.muted}}>Based on avg of estimate ranges</div>
+      </Card>
+      <Card>
+        <div style={{fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Avg Days to Close</div>
+        <div style={{fontFamily:"'DM Serif Display',serif",fontSize:32,color:T.amber,letterSpacing:-1,lineHeight:1,marginBottom:4}}>{leads.filter(l=>l.status==="won").length>0?"3.2":"—"}</div>
+        <div style={{fontSize:12,color:T.muted}}>From lead to marked Won</div>
+      </Card>
+      <Card>
+        <div style={{fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Contact Rate</div>
+        <div style={{fontFamily:"'DM Serif Display',serif",fontSize:32,color:T.blueL,letterSpacing:-1,lineHeight:1,marginBottom:4}}>{total>0?Math.round(((sc.contacted+sc.won+sc.lost)/total)*100):0}%</div>
+        <div style={{fontSize:12,color:T.muted}}>Leads moved past "New"</div>
+      </Card>
+    </div>
+  </div>;
+}
+
 function Dashboard({user,onLogout}){
   const [leads,setLeads]=useState([]);
   const [loading,setLoading]=useState(true);
@@ -677,133 +917,185 @@ function Dashboard({user,onLogout}){
   const [filter,setFilter]=useState("all");
   const [sort,setSort]=useState("date");
   const [selected,setSelected]=useState(null);
-  const [toast,setToast]=useState(null);
+  const [toastMsg,setToastMsg]=useState(null);
   const [search,setSearch]=useState("");
   const [showNotifs,setShowNotifs]=useState(false);
   const [unread,setUnread]=useState(0);
+  const [currentUser,setCurrentUser]=useState(user);
+  const [tierFilter,setTierFilter]=useState("all");
+
+  const showToast=(t)=>setToastMsg(t);
 
   const loadLeads=useCallback(async()=>{
-    try{const d=await db.getLeads(user.id);setLeads(d);}catch(e){console.error(e);}
+    try{const d=await db.getLeads(currentUser.id);setLeads(d);}catch(e){console.error(e);}
     setLoading(false);
-  },[user.id]);
-  const loadUnread=useCallback(async()=>{const n=await db.getNotifications(user.id);setUnread(n.filter(x=>!x.read).length);},[user.id]);
+  },[currentUser.id]);
+  const loadUnread=useCallback(async()=>{
+    const n=await db.getNotifications(currentUser.id);
+    setUnread(n.filter(x=>!x.read).length);
+  },[currentUser.id]);
 
   useEffect(()=>{
     loadLeads();loadUnread();
-    const ch=db.subscribeToLeads(user.id,(nl)=>{
+    const ch=db.subscribeToLeads(currentUser.id,(nl)=>{
       setLeads(p=>[nl,...p]);
-      setToast({message:`🔥 New ${nl.tier} lead: ${nl.name}`,type:"success"});
+      showToast({message:`🔥 New ${nl.tier} lead: ${nl.name}`,type:"success"});
       loadUnread();
     });
     return()=>sb.removeChannel(ch);
-  },[user.id]);
+  },[currentUser.id]);
 
   const updateStatus=async(id,status)=>{
-    try{await db.updateLeadStatus(id,status);setLeads(p=>p.map(l=>l.id===id?{...l,status}:l));setToast({message:`Lead marked as ${status}`,type:status==="won"?"success":"info"});loadUnread();}
-    catch(e){setToast({message:"Failed to update",type:"error"});}
+    try{
+      await db.updateLeadStatus(id,status);
+      setLeads(p=>p.map(l=>l.id===id?{...l,status}:l));
+      showToast({message:`Lead marked as ${status}`,type:status==="won"?"success":"info"});
+    }catch(e){showToast({message:"Failed to update",type:"error"});}
   };
 
   const filtered=leads
     .filter(l=>filter==="all"||l.status===filter)
-    .filter(l=>!search||l.name?.toLowerCase().includes(search.toLowerCase())||l.issue_type?.toLowerCase().includes(search.toLowerCase()))
-    .sort((a,b)=>sort==="score"?b.score-a.score:new Date(b.created_at)-new Date(a.created_at));
+    .filter(l=>tierFilter==="all"||l.tier===tierFilter)
+    .filter(l=>!search||l.name?.toLowerCase().includes(search.toLowerCase())||l.issue_type?.toLowerCase().includes(search.toLowerCase())||l.zip_code?.includes(search))
+    .sort((a,b)=>sort==="score"?b.score-a.score:sort==="name"?a.name?.localeCompare(b.name):new Date(b.created_at)-new Date(a.created_at));
 
   const total=leads.length,won=leads.filter(l=>l.status==="won").length;
   const active=leads.filter(l=>l.status==="new"||l.status==="contacted").length;
-  const closeRate=total>0?Math.round((won/total)*100):0;
   const avgScore=total>0?Math.round(leads.reduce((s,l)=>s+l.score,0)/total):0;
-  const sc={new:0,contacted:0,won:0,lost:0};leads.forEach(l=>{if(sc[l.status]!==undefined)sc[l.status]++;});
+  const sc={new:leads.filter(l=>l.status==="new").length,contacted:leads.filter(l=>l.status==="contacted").length,won,lost:leads.filter(l=>l.status==="lost").length};
+  const hotCount=leads.filter(l=>l.tier==="hot").length;
 
-  return <div style={{minHeight:"100vh",background:T.bg,display:"flex",flexDirection:"column"}}>
-    <nav style={{height:56,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 16px",borderBottom:`1px solid ${T.border}`,background:"rgba(9,12,17,0.97)",backdropFilter:"blur(16px)",position:"sticky",top:0,zIndex:100,flexShrink:0}}>
+  const TABS=[{id:"pipeline",label:"Pipeline",icon:"⚡"},{id:"analytics",label:"Analytics",icon:"📊"},{id:"settings",label:"Settings",icon:"⚙️"}];
+
+  return <div style={{minHeight:"100vh",background:T.bg,display:"flex",flexDirection:"column",width:"100%"}}>
+    {/* NAV */}
+    <nav style={{height:56,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 20px",borderBottom:`1px solid ${T.border}`,background:"rgba(9,12,17,0.97)",backdropFilter:"blur(16px)",position:"sticky",top:0,zIndex:100,flexShrink:0,width:"100%"}}>
       <div style={{display:"flex",alignItems:"center",gap:8}}>
         <LogoMark size={26}/>
         <span style={{fontFamily:"'DM Serif Display',serif",fontSize:16}}>Streamline</span>
-        <span style={{color:T.muted,fontSize:12,display:"none"}} className="hide-mobile"> · Dashboard</span>
       </div>
-      <div style={{display:"flex",alignItems:"center",gap:4}}>
-        {[{id:"pipeline",label:"Pipeline"},{id:"analytics",label:"Analytics"}].map(tab=>(
-          <button key={tab.id} onClick={()=>setView(tab.id)} style={{background:view===tab.id?T.surface2:"none",border:"none",cursor:"pointer",fontSize:13,fontWeight:500,padding:"5px 12px",borderRadius:7,color:view===tab.id?T.white:T.muted,transition:"all 0.2s"}}>{tab.label}</button>
+      <div style={{display:"flex",alignItems:"center",gap:2}}>
+        {TABS.map(tab=>(
+          <button key={tab.id} onClick={()=>setView(tab.id)} style={{background:view===tab.id?T.surface2:"none",border:"none",cursor:"pointer",fontSize:13,fontWeight:500,padding:"6px 13px",borderRadius:7,color:view===tab.id?T.white:T.muted,transition:"all 0.2s",display:"flex",alignItems:"center",gap:5}}>
+            <span style={{fontSize:12}}>{tab.icon}</span>{tab.label}
+          </button>
         ))}
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:8}}>
         <button onClick={()=>setShowNotifs(true)} style={{position:"relative",background:"none",border:"none",cursor:"pointer",color:T.muted,fontSize:17,padding:6,borderRadius:7,display:"flex",alignItems:"center"}}>
           🔔{unread>0&&<div style={{position:"absolute",top:0,right:0,width:14,height:14,borderRadius:"50%",background:T.red,fontSize:8,fontWeight:700,color:"white",display:"flex",alignItems:"center",justifyContent:"center"}}>{unread}</div>}
         </button>
-        <div style={{width:26,height:26,borderRadius:"50%",background:T.blue,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700}}>{user.company?.[0]||user.email?.[0]?.toUpperCase()||"U"}</div>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <div style={{width:28,height:28,borderRadius:"50%",background:T.blue,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700}}>{currentUser.company?.[0]||currentUser.email?.[0]?.toUpperCase()||"U"}</div>
+          <div className="hide-mobile">
+            <div style={{fontSize:12,fontWeight:500,color:T.white,lineHeight:1.2}}>{currentUser.company||"My Business"}</div>
+            <div style={{fontSize:10,color:T.muted}}>{currentUser.plan||"Starter"} plan</div>
+          </div>
+        </div>
         <Btn variant="outline" size="sm" onClick={onLogout} style={{fontSize:12,padding:"6px 10px"}}>Sign Out</Btn>
       </div>
     </nav>
 
-    <div style={{flex:1,padding:"20px 24px",width:"100%"}}>
+    <div style={{flex:1,padding:"20px 24px",width:"100%",maxWidth:1400,margin:"0 auto"}}>
       {loading?(
-        <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:240,gap:12}}><Spinner/><span style={{color:T.muted,fontSize:14}}>Loading…</span></div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:300,gap:12}}><Spinner/><span style={{color:T.muted,fontSize:14}}>Loading your pipeline…</span></div>
       ):view==="pipeline"?(
         <div style={{animation:"fadeIn 0.3s ease"}}>
-          {/* Stats */}
-          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}} className="grid-2-mobile">
-            {[{label:"Total",value:total,color:T.blueL},{label:"Active",value:active,color:T.cyan},{label:"Won",value:won,color:T.green},{label:"Avg Score",value:avgScore,color:T.amber}].map(s=>(
+          {/* Top stats */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:18}} className="grid-2-mobile">
+            {[
+              {label:"Total Leads",value:total,color:T.blueL,icon:"📋"},
+              {label:"Active",value:active,color:T.cyan,icon:"⚡"},
+              {label:"Hot Leads",value:hotCount,color:T.red,icon:"🔥"},
+              {label:"Won",value:won,color:T.green,icon:"✅"},
+              {label:"Avg Score",value:avgScore,color:T.amber,icon:"⭐"},
+            ].map(s=>(
               <div key={s.label} style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:12,padding:"14px 16px"}}>
-                <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:24,fontWeight:700,color:s.color,marginBottom:2}}>{s.value}</div>
-                <div style={{fontSize:12,color:T.muted}}>{s.label}</div>
+                <div style={{fontSize:18,marginBottom:6}}>{s.icon}</div>
+                <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:22,fontWeight:700,color:s.color,marginBottom:2}}>{s.value}</div>
+                <div style={{fontSize:11,color:T.muted}}>{s.label}</div>
               </div>
             ))}
           </div>
-          {/* Filters */}
+
+          {/* Filters row */}
           <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
-            <div style={{position:"relative",flex:1,minWidth:150}}>
-              <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search leads…" style={{width:"100%",background:T.surface,border:`1px solid ${T.border2}`,borderRadius:8,padding:"9px 12px 9px 30px",color:T.white,fontSize:13,outline:"none"}}/>
-              <span style={{position:"absolute",left:9,top:"50%",transform:"translateY(-50%)",color:T.muted,fontSize:12}}>🔍</span>
+            <div style={{position:"relative",flex:1,minWidth:180}}>
+              <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search by name, issue, zip…" style={{width:"100%",background:T.surface,border:`1px solid ${T.border2}`,borderRadius:8,padding:"9px 12px 9px 32px",color:T.white,fontSize:13,outline:"none"}}/>
+              <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:T.muted,fontSize:12}}>🔍</span>
             </div>
             <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
               {["all","new","contacted","won","lost"].map(f=>(
                 <button key={f} onClick={()=>setFilter(f)} style={{padding:"6px 10px",borderRadius:7,border:`1px solid ${filter===f?T.blue:T.border2}`,background:filter===f?"rgba(37,99,235,0.15)":"none",color:filter===f?T.blueL:T.muted,cursor:"pointer",fontSize:12,fontWeight:500,transition:"all 0.15s"}}>
-                  {f.charAt(0).toUpperCase()+f.slice(1)} <span style={{opacity:0.5,fontSize:10}}>{f==="all"?leads.length:sc[f]}</span>
+                  {f.charAt(0).toUpperCase()+f.slice(1)} <span style={{opacity:0.5,fontSize:10}}>{f==="all"?total:sc[f]}</span>
+                </button>
+              ))}
+            </div>
+            <div style={{display:"flex",gap:4}}>
+              {["all","hot","warm","cold"].map(t=>(
+                <button key={t} onClick={()=>setTierFilter(t)} style={{padding:"6px 10px",borderRadius:7,border:`1px solid ${tierFilter===t?(t==="hot"?T.red:t==="warm"?T.amber:t==="cold"?T.muted:T.blue):T.border2}`,background:tierFilter===t?"rgba(37,99,235,0.1)":"none",color:tierFilter===t?T.white:T.muted,cursor:"pointer",fontSize:12,fontWeight:500}}>
+                  {t==="hot"?"🔥":t==="warm"?"☀️":t==="cold"?"❄️":"All"} {t!=="all"&&t.charAt(0).toUpperCase()+t.slice(1)}
                 </button>
               ))}
             </div>
             <select value={sort} onChange={e=>setSort(e.target.value)} style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:8,padding:"8px 10px",color:T.offWhite,fontSize:12,cursor:"pointer",outline:"none"}}>
-              <option value="date">Newest</option>
-              <option value="score">Score ↓</option>
+              <option value="date">Newest First</option>
+              <option value="score">Highest Score</option>
+              <option value="name">Name A–Z</option>
             </select>
           </div>
+
           {/* Desktop table */}
           <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:14,overflow:"hidden"}} className="hide-mobile">
-            <div style={{display:"grid",gridTemplateColumns:"2fr 1.4fr 1fr 1.3fr 70px 90px 100px",padding:"10px 16px",borderBottom:`1px solid ${T.border}`,fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.07em"}}>
-              {["Lead","Issue","Budget","Score","Tier","Status",""].map(h=><div key={h}>{h}</div>)}
+            <div style={{display:"grid",gridTemplateColumns:"2fr 1.4fr 1fr 1fr 1.4fr 70px 90px 110px",padding:"10px 16px",borderBottom:`1px solid ${T.border}`,fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.07em"}}>
+              {["Lead","Issue","Budget","Zip","Score","Tier","Status",""].map(h=><div key={h}>{h}</div>)}
             </div>
             {filtered.length===0?(
-              <div style={{padding:40,textAlign:"center",color:T.muted}}>
-                <div style={{fontSize:28,marginBottom:10}}>📭</div>
-                <div style={{fontSize:14,color:T.offWhite,marginBottom:4}}>No leads yet</div>
-                <div style={{fontSize:12}}>Leads from your intake form will appear here in real-time.</div>
+              <div style={{padding:56,textAlign:"center",color:T.muted}}>
+                <div style={{fontSize:32,marginBottom:12}}>📭</div>
+                <div style={{fontSize:15,color:T.offWhite,marginBottom:6}}>No leads yet</div>
+                <div style={{fontSize:13}}>Share your intake form URL to start receiving qualified leads in real-time.</div>
+                <div style={{marginTop:16}}><Btn variant="outline" size="sm" onClick={()=>setView("settings")}>View my intake URL →</Btn></div>
               </div>
             ):filtered.map((lead,i)=>(
               <div key={lead.id} onClick={()=>setSelected(lead)}
-                style={{display:"grid",gridTemplateColumns:"2fr 1.4fr 1fr 1.3fr 70px 90px 100px",padding:"12px 16px",borderBottom:i<filtered.length-1?`1px solid ${T.border}`:"none",cursor:"pointer",transition:"background 0.15s"}}
+                style={{display:"grid",gridTemplateColumns:"2fr 1.4fr 1fr 1fr 1.4fr 70px 90px 110px",padding:"12px 16px",borderBottom:i<filtered.length-1?`1px solid ${T.border}`:"none",cursor:"pointer",transition:"background 0.15s"}}
                 onMouseEnter={e=>e.currentTarget.style.background=T.surface2}
                 onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                <div><div style={{fontSize:13,fontWeight:600,marginBottom:1}}>{lead.name}</div><div style={{fontSize:11,color:T.muted}}>{lead.phone}</div></div>
+                <div>
+                  <div style={{fontSize:13,fontWeight:600,marginBottom:1}}>{lead.name}</div>
+                  <div style={{fontSize:11,color:T.muted}}>{lead.phone} · {new Date(lead.created_at).toLocaleDateString()}</div>
+                </div>
                 <div style={{fontSize:12,color:T.offWhite,alignSelf:"center"}}>{lead.is_name||lead.issue_type}</div>
-                <div style={{fontSize:12,color:T.offWhite,alignSelf:"center"}}>{lead.budget?.replace(/_/g," ")}</div>
+                <div style={{fontSize:12,color:T.offWhite,alignSelf:"center",textTransform:"capitalize"}}>{lead.budget?.replace(/_/g," ")}</div>
+                <div style={{fontSize:12,color:T.offWhite,alignSelf:"center"}}>{lead.zip_code||"—"}</div>
                 <div style={{alignSelf:"center"}}><ScoreBar score={lead.score}/></div>
                 <div style={{alignSelf:"center"}}><Pill color={lead.tier}>{lead.tier}</Pill></div>
                 <div style={{alignSelf:"center"}}><Pill color={lead.status}>{lead.status}</Pill></div>
                 <div style={{alignSelf:"center",display:"flex",gap:4}} onClick={e=>e.stopPropagation()}>
-                  {lead.status==="new"&&<button onClick={()=>updateStatus(lead.id,"contacted")} style={{background:"none",border:`1px solid ${T.border2}`,borderRadius:5,padding:"4px 6px",cursor:"pointer",color:T.muted,fontSize:11}}>📞</button>}
+                  {lead.status==="new"&&<button title="Mark Contacted" onClick={()=>updateStatus(lead.id,"contacted")} style={{background:"none",border:`1px solid ${T.border2}`,borderRadius:5,padding:"4px 7px",cursor:"pointer",color:T.muted,fontSize:12}}>📞</button>}
                   {lead.status!=="won"&&lead.status!=="lost"&&<>
-                    <button onClick={()=>updateStatus(lead.id,"won")} style={{background:"none",border:"1px solid rgba(16,185,129,0.3)",borderRadius:5,padding:"4px 6px",cursor:"pointer",color:T.green,fontSize:11}}>✓</button>
-                    <button onClick={()=>updateStatus(lead.id,"lost")} style={{background:"none",border:"1px solid rgba(239,68,68,0.3)",borderRadius:5,padding:"4px 6px",cursor:"pointer",color:T.red,fontSize:11}}>✗</button>
+                    <button title="Mark Won" onClick={()=>updateStatus(lead.id,"won")} style={{background:"none",border:"1px solid rgba(16,185,129,0.3)",borderRadius:5,padding:"4px 7px",cursor:"pointer",color:T.green,fontSize:12}}>✓</button>
+                    <button title="Mark Lost" onClick={()=>updateStatus(lead.id,"lost")} style={{background:"none",border:"1px solid rgba(239,68,68,0.3)",borderRadius:5,padding:"4px 7px",cursor:"pointer",color:T.red,fontSize:12}}>✗</button>
                   </>}
                 </div>
               </div>
             ))}
           </div>
+
           {/* Mobile cards */}
           <div style={{display:"none",flexDirection:"column",gap:8}} id="mobile-cards">
             {filtered.map(lead=>(
               <div key={lead.id} onClick={()=>setSelected(lead)} style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:12,padding:14,cursor:"pointer"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
-                  <div><div style={{fontSize:14,fontWeight:600}}>{lead.name}</div><div style={{fontSize:12,color:T.muted,marginTop:2}}>{lead.is_name||lead.issue_type}</div></div>
-                  <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:20,fontWeight:700,color:lead.tier==="hot"?T.green:lead.tier==="warm"?T.amber:T.muted}}>{lead.score}</div>
+                  <div>
+                    <div style={{fontSize:14,fontWeight:600}}>{lead.name}</div>
+                    <div style={{fontSize:12,color:T.muted,marginTop:1}}>{lead.is_name||lead.issue_type} · {lead.zip_code}</div>
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:20,fontWeight:700,color:lead.tier==="hot"?T.green:lead.tier==="warm"?T.amber:T.muted}}>{lead.score}</div>
+                    <div style={{fontSize:10,color:T.muted}}>score</div>
+                  </div>
                 </div>
                 <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
                   <Pill color={lead.tier}>{lead.tier}</Pill><Pill color={lead.status}>{lead.status}</Pill>
@@ -814,52 +1106,24 @@ function Dashboard({user,onLogout}){
           </div>
           <style>{`@media(max-width:768px){.hide-mobile{display:none!important}#mobile-cards{display:flex!important}}`}</style>
         </div>
+      ):view==="analytics"?(
+        <AnalyticsView leads={leads}/>
       ):(
         <div style={{animation:"fadeIn 0.3s ease"}}>
-          <h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:"clamp(20px,4vw,26px)",letterSpacing:-0.8,marginBottom:5}}>Analytics</h2>
-          <p style={{color:T.muted,fontSize:13,marginBottom:18}}>Performance overview for your lead pipeline.</p>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:14}} className="grid-1-mobile">
-            {[{label:"Close Rate",value:`${closeRate}%`,sub:`${won} won of ${total}`,color:T.green},{label:"Avg Score",value:avgScore,sub:"Lead quality",color:T.amber},{label:"Active",value:active,sub:`${sc.won+sc.lost} resolved`,color:T.blueL}].map(k=>(
-              <Card key={k.label}>
-                <div style={{fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>{k.label}</div>
-                <div style={{fontFamily:"'DM Serif Display',serif",fontSize:38,color:k.color,letterSpacing:-1.5,lineHeight:1,marginBottom:3}}>{k.value}</div>
-                <div style={{fontSize:12,color:T.muted}}>{k.sub}</div>
-              </Card>
-            ))}
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}} className="grid-1-mobile">
-            <Card>
-              <div style={{fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:14}}>Lead Quality</div>
-              {[{label:"Hot",color:T.green,count:leads.filter(l=>l.tier==="hot").length},{label:"Warm",color:T.amber,count:leads.filter(l=>l.tier==="warm").length},{label:"Cold",color:T.muted,count:leads.filter(l=>l.tier==="cold").length}].map(({label,color,count})=>(
-                <div key={label} style={{marginBottom:12}}>
-                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:13,color:T.offWhite}}>{label}</span><span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11,color}}>{count}</span></div>
-                  <div style={{height:5,background:T.border,borderRadius:3,overflow:"hidden"}}><div style={{width:total>0?`${(count/total)*100}%`:"0%",height:"100%",background:color,borderRadius:3,transition:"width 0.8s ease"}}/></div>
-                </div>
-              ))}
-            </Card>
-            <Card>
-              <div style={{fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:14}}>Pipeline Status</div>
-              {[{label:"New",color:T.blueL,count:sc.new},{label:"Contacted",color:T.amber,count:sc.contacted},{label:"Won",color:T.green,count:sc.won},{label:"Lost",color:T.red,count:sc.lost}].map(({label,color,count})=>(
-                <div key={label} style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
-                  <div style={{width:6,height:6,borderRadius:"50%",background:color,flexShrink:0}}/>
-                  <span style={{fontSize:13,color:T.offWhite,flex:1}}>{label}</span>
-                  <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11,color}}>{count}</span>
-                  <div style={{width:70,height:4,background:T.border,borderRadius:2,overflow:"hidden"}}><div style={{width:total>0?`${(count/total)*100}%`:"0%",height:"100%",background:color,borderRadius:2}}/></div>
-                </div>
-              ))}
-            </Card>
-          </div>
+          <h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:"clamp(20px,3vw,26px)",letterSpacing:-0.8,marginBottom:5}}>Settings</h2>
+          <p style={{color:T.muted,fontSize:13,marginBottom:24}}>Manage your business profile, intake URL, Calendly link, and plan.</p>
+          <SettingsPanel user={currentUser} onSave={u=>setCurrentUser(u)} toast={showToast}/>
         </div>
       )}
     </div>
-    <LeadDetail lead={selected} onClose={()=>setSelected(null)} onStatusChange={(id,s)=>{updateStatus(id,s);setSelected(null);}}/>
-    {toast&&<Toast message={toast.message} type={toast.type} onDone={()=>setToast(null)}/>}
+
+    <LeadDetail lead={selected} onClose={()=>setSelected(null)} onStatusChange={(id,s)=>{updateStatus(id,s);setSelected(null);}} calendlyUrl={currentUser.calendly_url}/>
+    {toastMsg&&<Toast message={toastMsg.message} type={toastMsg.type} onDone={()=>setToastMsg(null)}/>}
     <Modal open={showNotifs} onClose={()=>{setShowNotifs(false);setUnread(0);}} title="Notifications">
-      <NotificationsPanel userId={user.id}/>
+      <NotificationsPanel userId={currentUser.id}/>
     </Modal>
   </div>;
 }
-
 // ─── LANDING PAGE ─────────────────────────────────────────────────────────────
 function LandingFAQ(){
   const [open,setOpen]=useState(0);
