@@ -245,64 +245,196 @@ function LogoMark({size=32}){
 }
 
 // ─── CHATBOT ──────────────────────────────────────────────────────────────────
-const KB={
-  greetings:["hi","hello","hey"],pricing:["price","cost","how much","plan","fee","pay"],
-  how:["how","work","explain","process"],leads:["lead","exclusive","shared","quality","score"],
-  industries:["hvac","roofing","plumbing","electrical","industry"],intake:["intake","form","quote","submit"],
-  contact:["contact","call","email","support","human"],cancel:["cancel","pause","stop"],
-  difference:["different","homeadvisor","angi","thumbtack","vs"],
-};
-function autoReply(msg){
-  const m=msg.toLowerCase();
-  if(KB.greetings.some(w=>m.includes(w)))return "Hey! Welcome to Streamline. Ask me about pricing, how it works, or lead quality.";
-  if(KB.difference.some(w=>m.includes(w)))return "Unlike HomeAdvisor or Angi, we never sell the same lead to multiple businesses. Leads are exclusive, pre-scored, and we only earn more when you close the job.";
-  if(KB.pricing.some(w=>m.includes(w)))return "**Starter — $299/mo** + $150 per closed job (up to 20 leads/mo)\n**Growth — $499/mo** + $100 per closed job (up to 50 leads/mo)\n\nPerformance fee only when you win.";
-  if(KB.how.some(w=>m.includes(w)))return "1️⃣ Customer fills out the intake form\n2️⃣ We score them 0–100\n3️⃣ They get an instant estimate\n4️⃣ Lead hits your dashboard in <60 seconds";
-  if(KB.leads.some(w=>m.includes(w)))return "Every lead is exclusive — once assigned, no other business sees it. Scored Hot (75+), Warm (50–74), or Cold (<50).";
-  if(KB.industries.some(w=>m.includes(w)))return "Live for **HVAC, Roofing, Plumbing, and Electrical** in Columbus, OH. Expanding in 2026.";
-  if(KB.intake.some(w=>m.includes(w)))return "Each industry has its own intake form with tailored questions. Driven by URL param — one form per ad campaign.";
-  if(KB.cancel.some(w=>m.includes(w)))return "Cancel or pause anytime from your dashboard — no penalties.";
-  if(KB.contact.some(w=>m.includes(w)))return "Reach us at **hello@streamline.io** or click Request Access to schedule a demo.";
-  return "I may not have that detail — reach us at hello@streamline.io or click **Request Access** to talk with someone.";
+// ─── SMART CHATBOT ENGINE ─────────────────────────────────────────────────────
+// Priority-ordered rules. First match wins.
+const CHAT_RULES = [
+  // Greetings
+  { match: m => /^(hi|hey|hello|good morning|good afternoon|good evening|what'?s up|howdy|sup)\b/.test(m),
+    reply: () => "Hey! Welcome to Streamline — I'm your sales assistant. I can answer questions about pricing, lead quality, how our intake forms work, or how we compare to other lead services. What can I help you with?" },
+
+  // Profanity / frustration
+  { match: m => /(stupid|useless|terrible|awful|hate this|scam|waste)/.test(m),
+    reply: () => "I'm sorry to hear that — I want to make sure you get what you need. Feel free to reach us directly at **hello@streamline.io** and a real person will get back to you within one business day." },
+
+  // Thanks
+  { match: m => /^(thanks|thank you|thx|ty|appreciate|perfect|great|awesome|helpful)/.test(m),
+    reply: () => "Happy to help! Is there anything else you'd like to know about Streamline?" },
+
+  // Competitor comparison — HomeAdvisor / Angi / Thumbtack / Bark
+  { match: m => /(homeadvisor|home advisor|angi|thumbtack|bark\.com|yelp|houzz|porch\.com|networx|vs\.|versus|compare|different from|better than|competitor)/.test(m),
+    reply: () => "Great question. Here's how we're different:\n\n**HomeAdvisor / Angi** sell the same lead to 3–5 contractors simultaneously and charge you regardless of outcome. You end up racing to the phone.\n\n**Streamline** leads are:\n› Exclusive — one business per lead, always\n› Pre-scored 0–100 before delivery\n› Paired with an estimate the customer already agreed to\n› Only cost a performance fee when *you* close the job\n\nWe win when you win." },
+
+  // Pricing — general
+  { match: m => /(price|pricing|cost|how much|subscription|monthly|fee|plan|starter|growth|tier|package|what do you charge|what'?s the rate)/.test(m) && !/(performance|close|won|per job|per lead)/.test(m),
+    reply: () => "We have two plans:\n\n**Starter — $299/mo**\n› Up to 20 qualified leads/month\n› $150 performance fee per closed job\n\n**Growth — $499/mo**\n› Up to 50 qualified leads/month\n› $100 performance fee per closed job\n› Priority queue, CRM integrations, account manager\n\nBoth plans include exclusive leads, real-time dashboard, and instant notifications. No setup fees." },
+
+  // Performance fee
+  { match: m => /(performance fee|per job|per close|per lead|when do i pay|when am i charged|pay per|cost per)/.test(m),
+    reply: () => "The performance fee only applies when you mark a lead as **Won** in your dashboard — meaning you closed the job.\n\n› Starter: **$150** per closed job\n› Growth: **$100** per closed job\n\nFees are invoiced at the end of each month. You're never charged for leads that don't convert." },
+
+  // Free trial / demo
+  { match: m => /(free trial|trial|demo|try it|test it|sample|free leads|no commitment)/.test(m),
+    reply: () => "We don't currently offer a free trial, but we do offer a **live demo** where we walk you through the dashboard, show you real scored leads, and explain the full intake flow.\n\nClick **Request Access** at the top of the page to schedule one — usually same week." },
+
+  // ROI / worth it / is it worth
+  { match: m => /(worth it|roi|return|profitable|make money|pay off|justify|too expensive|cheaper)/.test(m),
+    reply: () => "Here's the math most contractors run:\n\nIf your average job value is $2,000 and you close 30% of leads on the Starter plan:\n› 20 leads × 30% = **6 closed jobs/month**\n› Revenue: $12,000\n› Cost: $299 + (6 × $150) = **$1,199**\n› Net: ~$10,800\n\nHot leads (score 75+) close at significantly higher rates. Most contractors see positive ROI in their first month." },
+
+  // How scoring works
+  { match: m => /(score|scoring|how.*(score|rank|rate|qualify)|lead score|what.*(score|mean)|hot|warm|cold|qualify|qualification)/.test(m),
+    reply: () => "Every lead is scored **0–100** across six dimensions before it reaches you:\n\n› **Budget match** (20pts) — do they have the money?\n› **Urgency** (20pts) — emergency, this week, or flexible?\n› **Ownership** (15pts) — homeowner or renter?\n› **Property size** (15pts) — scope of the job\n› **Issue clarity** (15pts) — did they describe the problem well?\n› **Contact quality** (15pts) — valid phone, preferred time, zip code\n\n**Hot** = 75+, **Warm** = 50–74, **Cold** = below 50.\n\nHot leads are flagged immediately and close at the highest rates." },
+
+  // Exclusivity
+  { match: m => /(exclusive|shared|only me|my lead|stolen|sold to|how many|other contractor|competing)/.test(m),
+    reply: () => "Every lead is **100% exclusive to you**. The moment a lead is assigned to your account, it's removed from availability for every other business on the platform.\n\nWe never sell the same lead twice — not to a competitor, not to a partner, not to anyone. That's a core part of how Streamline works." },
+
+  // Lead volume / how many leads
+  { match: m => /(how many leads|lead volume|volume|leads per month|leads a month|enough leads|run out)/.test(m),
+    reply: () => "Lead volume depends on your plan:\n\n› **Starter**: up to 20 qualified leads/month\n› **Growth**: up to 50 qualified leads/month\n\nNeed more than 50? Contact us at hello@streamline.io and we can discuss a custom volume arrangement." },
+
+  // Lead quality
+  { match: m => /(lead quality|junk|fake|bad leads|garbage|low quality|real|legit|verified|good leads)/.test(m),
+    reply: () => "Lead quality is our #1 priority. Here's how we maintain it:\n\n› Every lead goes through our **6-dimension scoring engine** before delivery\n› Customers see a realistic estimate range *before* submitting — so price-shoppers self-select out\n› Low-intent leads (score below a threshold) are filtered automatically\n› You can mark any lead as Lost with one click — we track that data to improve future quality\n\nMost contractors report our leads close at 2–3× the rate of shared lead services." },
+
+  // How it works — general
+  { match: m => /(how.*(work|does it|get leads|receive|deliver)|explain|walk me through|process|step|overview|tell me about)/.test(m),
+    reply: () => "Here's the full flow:\n\n**1. Customer clicks your ad** → lands on your industry-specific intake form\n**2. They answer 5 steps** → issue type, urgency, budget, property size, contact info\n**3. We score them 0–100** → in real-time, across 6 dimensions\n**4. They receive an estimate** → a realistic price range for their job\n**5. Lead hits your dashboard** → within 60 seconds, with full details\n**6. You get notified** → in-app alert + email\n**7. You contact them** → they're already warmed up and price-educated" },
+
+  // Intake form
+  { match: m => /(intake form|quote form|lead form|form|how.*(customer|homeowner)|customer.*(fill|submit|see)|what.*(customer|homeowner).*(do|see|fill))/.test(m),
+    reply: () => "The intake form is a 5-step questionnaire your customers complete from your ad or direct link.\n\nEach industry has its own tailored version:\n› **HVAC** — AC type, issue description, urgency, property, budget\n› **Roofing** — damage type, storm/age, property, budget\n› **Plumbing** — issue type, urgency, property, budget\n› **Electrical** — service type, property, budget\n\nEach ad campaign gets its own URL:\n`yoursite.com/?industry=hvac`\n`yoursite.com/?industry=roofing`\n\nTakes customers about 2 minutes to complete." },
+
+  // Dashboard
+  { match: m => /(dashboard|pipeline|where.*(see|view|find).*(lead|customer)|lead.*(view|list|table|track)|how.*(track|manage|see my))/.test(m),
+    reply: () => "Your dashboard shows your full lead pipeline in real-time:\n\n› All leads sorted by score or date\n› Filter by status: New, Contacted, Won, Lost\n› Search by name or issue type\n› One-click status updates\n› Score breakdown for every lead\n› Analytics: close rate, avg score, pipeline value\n\nEvery time a new lead comes in, you get an in-app notification instantly." },
+
+  // Notifications
+  { match: m => /(notif|alert|notify|sms|text message|email alert|how.*(know|find out).*(lead|new)|when.*(lead|new))/.test(m),
+    reply: () => "You're notified the moment a new lead is assigned to you:\n\n› **In-app notification** — bell icon lights up in your dashboard\n› **Email alert** — sent to your registered email address\n\nSMS notifications via Twilio are on our roadmap for later this year." },
+
+  // Industries / what trades
+  { match: m => /(industr|trade|hvac|roofing|plumbing|electrical|what.*(serve|support|cover|offer)|which.*(trade|industr|business))/.test(m),
+    reply: () => "We currently serve four trades in the **Columbus, OH metro area**:\n\n› 🌬️ **HVAC** — AC repair, replacement, heating, duct work\n› 🏠 **Roofing** — repair, replacement, gutters, storm damage\n› 🔧 **Plumbing** — leaks, drains, water heaters, remodels\n› ⚡ **Electrical** — panels, wiring, EV chargers, smart home\n\nMore trades and cities launching throughout 2026. Email hello@streamline.io to get on the waitlist for your area." },
+
+  // Location / cities / areas
+  { match: m => /(location|city|cities|area|where|columbus|ohio|oh|region|market|expand|available in|do you serve)/.test(m),
+    reply: () => "We're currently live in the **Columbus, Ohio metro area** — covering Columbus, Dublin, Westerville, Hilliard, Grove City, Pickerington, and surrounding suburbs.\n\nWe're actively planning expansion to Cleveland, Cincinnati, and other Ohio markets in 2026. If you're outside Columbus, email hello@streamline.io to get on the expansion waitlist." },
+
+  // Cancel / pause
+  { match: m => /(cancel|pause|stop|quit|leave|end my|end subscription|exit)/.test(m),
+    reply: () => "You can cancel or pause your subscription **anytime** directly from your dashboard — no phone call required, no cancellation fees, no penalty.\n\nIf you pause, your account stays intact and you can reactivate when you're ready. Leads simply stop being assigned while paused." },
+
+  // Contract / commitment / lock-in
+  { match: m => /(contract|commitment|lock.?in|minimum|tied|long.?term|annual|month.?to.?month)/.test(m),
+    reply: () => "No long-term contracts. Streamline is **month-to-month** — you can upgrade, downgrade, pause, or cancel at any time.\n\nWe don't believe in locking contractors in. If we're not delivering value, you should be free to leave. Simple as that." },
+
+  // Setup / onboarding / getting started
+  { match: m => /(set.?up|onboard|get started|start|sign up|create account|register|join|how.*(join|start|begin))/.test(m),
+    reply: () => "Getting started takes about 5 minutes:\n\n**1.** Click **Request Access** or **Get Started** on this page\n**2.** Create your account with your business email\n**3.** Choose your plan (Starter or Growth)\n**4.** Get your industry-specific intake form URL\n**5.** Add it to your Google/Facebook/Instagram ads\n\nLeads start flowing once customers start clicking. Most contractors receive their first lead within 24–48 hours of going live." },
+
+  // Support / contact / human
+  { match: m => /(contact|support|help|talk to|speak to|human|real person|someone|phone number|call you|reach you|email)/.test(m),
+    reply: () => "You can reach our team at:\n\n📧 **hello@streamline.io**\n\nWe typically respond within a few hours during business days. You can also click **Request Access** to schedule a live demo call with the team." },
+
+  // What is Streamline
+  { match: m => /(what is streamline|what does streamline|what are you|tell me about streamline|who are you|what do you do)/.test(m),
+    reply: () => "**Streamline** is a lead generation platform built specifically for home service contractors — HVAC, Roofing, Plumbing, and Electrical.\n\nInstead of cold, shared leads, we deliver:\n› **Exclusive** — one contractor per lead\n› **Pre-scored** — 0–100 quality rating before delivery\n› **Pre-educated** — customers already have a price estimate\n\nYou only pay a performance fee when you close the job. We win when you win." },
+
+  // Reviews / testimonials / proof
+  { match: m => /(review|testimonial|proof|case study|success story|result|who.*(use|uses|using)|other contractor|reference|trust)/.test(m),
+    reply: () => "Here's what contractors using Streamline say:\n\n**Mike R. (Roofing, Columbus)** — \"The leads come in already knowing their budget. Closing faster than ever.\"\n\n**Dana L. (Plumbing, Dublin)** — \"Was paying $800/month sharing leads with four others. Streamline gives me exclusives at a lower cost.\"\n\n**James T. (Electrical, Westerville)** — \"Clean dashboard, real leads. I've never received one that was junk.\"\n\nWant to talk to an existing client? Email hello@streamline.io and we can set that up." },
+
+  // Estimate / pricing shown to customer
+  { match: m => /(estimate|price range|what.*(customer|homeowner).*(see|get|receive)|instant estimate|price.*(customer|homeowner))/.test(m),
+    reply: () => "After a customer completes the intake form, they receive an **instant estimate range** based on their issue type, property size, and location.\n\nFor example:\n› AC Repair: **$350–$1,200**\n› Roof Replacement: **$8,000–$20,000**\n› Panel Upgrade: **$1,500–$4,000**\n\nThis means when *you* call them, they already have realistic price expectations — no sticker shock, fewer price objections, faster closes." },
+
+  // CRM / integrations
+  { match: m => /(crm|integration|jobber|servicetitan|housecall|zapier|connect|sync|export|import|api)/.test(m),
+    reply: () => "CRM integrations are available on the **Growth plan** and include Jobber, ServiceTitan, and HouseCall Pro.\n\nZapier support is also on our roadmap for connecting to any tool in your stack. If you have a specific integration request, email hello@streamline.io." },
+
+  // Payment / billing / invoice
+  { match: m => /(pay|payment|billing|invoice|charge|credit card|method|stripe|bank|ach)/.test(m),
+    reply: () => "Billing is simple:\n\n› Your **monthly subscription** is charged on the same date each month\n› **Performance fees** are calculated at month-end based on leads you marked as Won\n› You receive an itemized invoice showing every closed job\n\nWe accept all major credit cards. ACH bank transfer is available on the Growth plan." },
+
+  // Guarantee / refund
+  { match: m => /(guarantee|refund|money back|promise|if it doesn.?t work|risk|what if)/.test(m),
+    reply: () => "We don't offer a formal money-back guarantee, but a few things protect you:\n\n› **No long-term contracts** — cancel any month, no penalty\n› **Performance fee only on wins** — you never pay extra for leads that don't close\n› **Lead quality tracking** — if lead quality drops, you can flag it and we investigate\n\nWe're also happy to schedule a demo before you commit so you can see exactly what you're getting." },
+
+  // Seasonal / slow season
+  { match: m => /(season|slow|winter|summer|off.?season|busy|peak|slow month|dead|quiet)/.test(m),
+    reply: () => "Seasonal swings are real in the trades. A few ways Streamline helps:\n\n› You can **pause** your account during true off-seasons — no charge while paused\n› The **Growth plan** includes seasonal campaign boosts — we increase your lead flow during peak demand periods\n› Our scoring engine filters for urgency, so emergency leads come through year-round regardless of season" },
+
+  // Fake / test leads
+  { match: m => /(fake|spam|bot|test lead|junk lead|scam lead|bad info|wrong number|bogus)/.test(m),
+    reply: () => "We take lead quality seriously. Here's how we reduce fake submissions:\n\n› Phone number validation (must be 10+ digits in correct format)\n› Zip code verification against service area\n› Minimum issue description length requirement\n› Scoring penalizes incomplete or vague contact info\n\nIf you receive a lead with clearly fake info, flag it in the dashboard and our team reviews it within 24 hours." },
+
+  // Fallback
+  { match: () => true,
+    reply: () => "That's a great question — I want to make sure you get an accurate answer. You can reach our team directly at **hello@streamline.io** or click **Request Access** to schedule a live demo.\n\nIs there something else I can help clarify about our pricing, lead quality, or how the platform works?" },
+];
+
+function autoReply(msg) {
+  const m = msg.toLowerCase().trim();
+  const rule = CHAT_RULES.find(r => r.match(m));
+  return rule ? rule.reply() : CHAT_RULES[CHAT_RULES.length - 1].reply();
 }
 
 function Chatbot(){
+  const SUGGESTIONS=["How does pricing work?","Are leads exclusive?","How do I get started?","How is this different from HomeAdvisor?","What industries do you serve?","Is there a contract?"];
   const [open,setOpen]=useState(false);
-  const [msgs,setMsgs]=useState([{role:"bot",text:"Hi! I'm the Streamline assistant. Ask me anything about pricing, how we work, or lead quality.",ts:Date.now()}]);
+  const [msgs,setMsgs]=useState([{role:"bot",text:"Hi! I'm the Streamline sales assistant. I can answer questions about pricing, lead quality, how our intake forms work, or how we compare to other lead services.\n\nWhat would you like to know?",ts:Date.now()}]);
+  const [showSugg,setShowSugg]=useState(true);
   const [input,setInput]=useState("");
   const [typing,setTyping]=useState(false);
   const [unread,setUnread]=useState(0);
   const bottomRef=useRef(null);
   useEffect(()=>{if(open){setUnread(0);setTimeout(()=>bottomRef.current?.scrollIntoView({behavior:"smooth"}),80)}},[msgs,open]);
-  const send=async()=>{
-    const text=input.trim();if(!text)return;
+
+  const send=async(textOverride)=>{
+    const text=(textOverride||input).trim();if(!text)return;
+    setShowSugg(false);
     setInput("");setMsgs(m=>[...m,{role:"user",text,ts:Date.now()}]);setTyping(true);
-    await new Promise(r=>setTimeout(r,700+Math.random()*400));
+    await new Promise(r=>setTimeout(r,600+Math.random()*500));
     setMsgs(m=>[...m,{role:"bot",text:autoReply(text),ts:Date.now()}]);setTyping(false);
     if(!open)setUnread(u=>u+1);
   };
-  const fmt=t=>t.split(/(\*\*[^*]+\*\*)/).map((p,i)=>p.startsWith("**")&&p.endsWith("**")?<strong key={i} style={{color:T.white}}>{p.slice(2,-2)}</strong>:p.split("\n").map((l,j,a)=><span key={j}>{l}{j<a.length-1&&<br/>}</span>));
+
+  const fmt=t=>t.split(/(\*\*[^*]+\*\*)/).map((p,i)=>p.startsWith("**")&&p.endsWith("**")
+    ?<strong key={i} style={{color:T.white}}>{p.slice(2,-2)}</strong>
+    :p.split("\n").map((l,j,a)=><span key={j}>{l}{j<a.length-1&&<br/>}</span>));
+
   return <div style={{position:"fixed",bottom:20,right:16,zIndex:500}}>
-    {open&&<div style={{position:"absolute",bottom:66,right:0,width:"min(360px,calc(100vw - 24px))",background:T.surface,border:`1px solid ${T.border2}`,borderRadius:16,boxShadow:"0 24px 64px rgba(0,0,0,0.6)",display:"flex",flexDirection:"column",height:440,animation:"chatPop 0.25s ease"}}>
+    {open&&<div style={{position:"absolute",bottom:66,right:0,width:"min(370px,calc(100vw - 24px))",background:T.surface,border:`1px solid ${T.border2}`,borderRadius:16,boxShadow:"0 24px 64px rgba(0,0,0,0.6)",display:"flex",flexDirection:"column",height:480,animation:"chatPop 0.25s ease"}}>
+      {/* Header */}
       <div style={{padding:"12px 14px",borderBottom:`1px solid ${T.border}`,background:T.surface2,borderRadius:"16px 16px 0 0",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
         <div style={{display:"flex",alignItems:"center",gap:9}}>
-          <div style={{width:30,height:30,borderRadius:"50%",background:`linear-gradient(135deg,${T.blue},${T.cyan})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,color:"white"}}>S</div>
-          <div><div style={{fontSize:13,fontWeight:600}}>Streamline Assistant</div><div style={{display:"flex",alignItems:"center",gap:4,fontSize:10,color:T.green}}><div style={{width:4,height:4,borderRadius:"50%",background:T.green}}/>Online</div></div>
+          <div style={{width:32,height:32,borderRadius:"50%",background:`linear-gradient(135deg,${T.blue},${T.cyan})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,color:"white"}}>S</div>
+          <div>
+            <div style={{fontSize:13,fontWeight:600}}>Streamline Assistant</div>
+            <div style={{display:"flex",alignItems:"center",gap:4,fontSize:10,color:T.green}}><div style={{width:4,height:4,borderRadius:"50%",background:T.green}}/>Online · Typically replies instantly</div>
+          </div>
         </div>
         <button onClick={()=>setOpen(false)} style={{background:"none",border:"none",color:T.muted,cursor:"pointer",fontSize:20,padding:4}}>×</button>
       </div>
+      {/* Messages */}
       <div style={{flex:1,overflowY:"auto",padding:12,display:"flex",flexDirection:"column",gap:10}}>
         {msgs.map((m,i)=><div key={i} style={{display:"flex",justifyContent:m.role==="user"?"flex-end":"flex-start"}}>
-          <div style={{maxWidth:"85%",padding:"10px 12px",borderRadius:m.role==="user"?"12px 12px 4px 12px":"12px 12px 12px 4px",background:m.role==="user"?T.blue:T.surface2,fontSize:13,color:m.role==="user"?T.white:T.offWhite,lineHeight:1.6,border:m.role==="bot"?`1px solid ${T.border}`:"none"}}>
+          <div style={{maxWidth:"88%",padding:"10px 13px",borderRadius:m.role==="user"?"12px 12px 4px 12px":"12px 12px 12px 4px",background:m.role==="user"?T.blue:T.surface2,fontSize:13,color:m.role==="user"?T.white:T.offWhite,lineHeight:1.65,border:m.role==="bot"?`1px solid ${T.border}`:"none"}}>
             {m.role==="bot"?fmt(m.text):m.text}
           </div>
         </div>)}
+        {/* Quick suggestions shown after first bot message */}
+        {showSugg&&msgs.length===1&&<div style={{display:"flex",flexDirection:"column",gap:6,marginTop:2}}>
+          <div style={{fontSize:10,color:T.muted,fontFamily:"'JetBrains Mono',monospace",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:2}}>Common questions</div>
+          {SUGGESTIONS.map(s=><button key={s} onClick={()=>send(s)} style={{background:"none",border:`1px solid ${T.border2}`,borderRadius:8,padding:"8px 12px",cursor:"pointer",color:T.offWhite,fontSize:12,textAlign:"left",transition:"border-color 0.15s,background 0.15s",touchAction:"manipulation"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=T.blueL;e.currentTarget.style.background=T.surface3;}} onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border2;e.currentTarget.style.background="none";}}>{s}</button>)}
+        </div>}
         {typing&&<div style={{display:"flex",gap:4,padding:"10px 12px",background:T.surface2,borderRadius:"12px 12px 12px 4px",width:"fit-content",border:`1px solid ${T.border}`}}>{[0,1,2].map(i=><div key={i} style={{width:5,height:5,borderRadius:"50%",background:T.muted,animation:`typingDot 1.2s ${i*0.2}s infinite`}}/>)}</div>}
         <div ref={bottomRef}/>
       </div>
+      {/* Input */}
       <div style={{padding:"10px 12px",borderTop:`1px solid ${T.border}`,display:"flex",gap:8,flexShrink:0}}>
         <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}}} placeholder="Ask a question…" style={{flex:1,background:T.surface2,border:`1px solid ${T.border2}`,borderRadius:8,padding:"10px 12px",color:T.white,fontSize:13,outline:"none"}}/>
-        <button onClick={send} disabled={!input.trim()} style={{background:T.blue,border:"none",borderRadius:8,width:38,height:38,cursor:"pointer",color:"white",display:"flex",alignItems:"center",justifyContent:"center",opacity:input.trim()?1:0.4,flexShrink:0}}>→</button>
+        <button onClick={()=>send()} disabled={!input.trim()} style={{background:T.blue,border:"none",borderRadius:8,width:38,height:38,cursor:"pointer",color:"white",display:"flex",alignItems:"center",justifyContent:"center",opacity:input.trim()?1:0.4,flexShrink:0,fontSize:16}}>→</button>
       </div>
     </div>}
     <button onClick={()=>setOpen(o=>!o)} style={{width:52,height:52,borderRadius:"50%",background:`linear-gradient(135deg,${T.blue},${T.cyan})`,border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,boxShadow:"0 8px 28px rgba(37,99,235,0.45)",position:"relative",touchAction:"manipulation"}}>
