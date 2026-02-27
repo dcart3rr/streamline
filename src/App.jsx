@@ -21,7 +21,9 @@ document.head.appendChild(fontLink);
 const gs = document.createElement("style");
 gs.textContent = `
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-  html,body,#root{height:100%;min-height:100%}
+  html{min-height:100%;scroll-behavior:smooth}
+  body{min-height:100%;width:100%}
+  #root{min-height:100%;width:100%;display:block;position:relative}
   body{background:${T.bg};color:${T.white};font-family:'DM Sans',system-ui,sans-serif;-webkit-font-smoothing:antialiased;overflow-x:hidden}
   ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:${T.surface}}::-webkit-scrollbar-thumb{background:${T.surface3};border-radius:2px}
   input,select,textarea,button{font-family:inherit;-webkit-appearance:none}
@@ -33,7 +35,6 @@ gs.textContent = `
   @keyframes chatPop{from{opacity:0;transform:translateY(12px) scale(0.96)}to{opacity:1;transform:translateY(0) scale(1)}}
   @keyframes typingDot{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}}
   @keyframes spin{to{transform:rotate(360deg)}}
-  html{scroll-behavior:smooth}
   @media(max-width:768px){
     .hide-mobile{display:none!important}
     .grid-1-mobile{grid-template-columns:1fr!important}
@@ -539,7 +540,7 @@ function IntakeForm({industryKey="hvac",onBack}){
       </div>
     </div>
     {/* Content */}
-    <div style={{flex:1,display:"flex",justifyContent:"center",padding:"28px 20px 40px",overflowY:"auto"}}>
+    <div style={{flex:1,display:"flex",justifyContent:"center",padding:"40px 20px",overflowY:"auto"}}>
       <div style={{width:"100%",maxWidth:540,animation:"fadeUp 0.3s ease"}} key={step}>
         <h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:"clamp(20px,4vw,26px)",letterSpacing:-0.5,marginBottom:5}}>{cur.title}</h2>
         <p style={{color:T.muted,fontSize:13,marginBottom:22}}>{cur.sub}</p>
@@ -732,7 +733,7 @@ function Dashboard({user,onLogout}){
       </div>
     </nav>
 
-    <div style={{flex:1,padding:16,maxWidth:1280,margin:"0 auto",width:"100%"}}>
+    <div style={{flex:1,padding:"20px 24px",width:"100%"}}>
       {loading?(
         <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:240,gap:12}}><Spinner/><span style={{color:T.muted,fontSize:14}}>Loading…</span></div>
       ):view==="pipeline"?(
@@ -889,7 +890,7 @@ function LandingPage({onLogin,onIntakeForm}){
 
   const navLinks=[["industries","Industries"],["how","How It Works"],["features","Features"],["pricing","Pricing"],["faq","FAQ"]];
 
-  return <div style={{background:T.bg,minHeight:"100vh"}}>
+  return <div style={{background:T.bg,minHeight:"100vh",width:"100%"}}>
     {/* NAV */}
     <nav style={{position:"fixed",top:0,left:0,right:0,height:60,zIndex:200,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 20px",background:"rgba(9,12,17,0.94)",backdropFilter:"blur(20px)",borderBottom:`1px solid ${T.border}`}}>
       <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -902,7 +903,6 @@ function LandingPage({onLogin,onIntakeForm}){
       </div>
       <div style={{display:"flex",alignItems:"center",gap:8}}>
         <Btn variant="outline" onClick={()=>setShowAuth(true)} style={{fontSize:13,padding:"8px 16px"}} className="hide-mobile">Log In</Btn>
-        <Btn onClick={()=>setShowAuth(true)} style={{fontSize:13,padding:"8px 16px"}}>Get Started</Btn>
         <button onClick={()=>setMobileNav(o=>!o)} style={{background:"none",border:`1px solid ${T.border2}`,color:T.white,cursor:"pointer",fontSize:16,padding:"7px 10px",borderRadius:8,display:"none"}} id="burger">☰</button>
       </div>
     </nav>
@@ -912,14 +912,14 @@ function LandingPage({onLogin,onIntakeForm}){
     {mobileNav&&<div style={{position:"fixed",top:60,left:0,right:0,background:T.surface,borderBottom:`1px solid ${T.border}`,zIndex:199,padding:"8px 0",animation:"fadeUp 0.2s ease"}}>
       {navLinks.map(([id,label])=><button key={id} onClick={()=>scrollTo(id)} style={{display:"block",width:"100%",background:"none",border:"none",cursor:"pointer",fontSize:15,fontWeight:500,color:T.offWhite,padding:"13px 20px",textAlign:"left"}}>{label}</button>)}
       <div style={{padding:"10px 16px",borderTop:`1px solid ${T.border}`,marginTop:4}}>
-        <Btn onClick={()=>{setShowAuth(true);setMobileNav(false);}} fullWidth>Log In / Sign Up</Btn>
+        <Btn onClick={()=>{setShowAuth(true);setMobileNav(false);}} fullWidth>Get Started</Btn>
       </div>
     </div>}
 
     {/* HERO */}
-    <section style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"clamp(90px,14vw,150px) 20px 80px",textAlign:"center",position:"relative",overflow:"hidden",background:"radial-gradient(ellipse 80% 60% at 50% 40%,rgba(37,99,235,0.1),transparent 70%)"}}>
+    <section style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"clamp(90px,14vw,150px) 20px 80px",textAlign:"center",position:"relative",overflow:"hidden",background:"radial-gradient(ellipse 80% 60% at 50% 40%,rgba(37,99,235,0.1),transparent 70%)",width:"100%"}}>
       <div style={{position:"absolute",top:0,left:0,right:0,height:1,background:"linear-gradient(90deg,transparent 5%,rgba(37,99,235,0.5) 35%,rgba(6,182,212,0.6) 50%,rgba(37,99,235,0.5) 65%,transparent 95%)"}}/>
-      <div style={{maxWidth:660,position:"relative",zIndex:1,width:"100%"}}>
+      <div style={{maxWidth:700,position:"relative",zIndex:1,width:"100%",margin:"0 auto"}}>
         <div style={{display:"inline-flex",alignItems:"center",gap:8,background:"rgba(37,99,235,0.1)",border:"1px solid rgba(37,99,235,0.25)",borderRadius:100,padding:"6px 14px",fontSize:11,fontWeight:600,color:T.blueL,letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:22}}>
           <div style={{width:5,height:5,background:T.blueL,borderRadius:"50%",animation:"pulse 2s infinite"}}/>Now accepting — Columbus, OH
         </div>
@@ -931,7 +931,7 @@ function LandingPage({onLogin,onIntakeForm}){
           Qualified, scored leads delivered to your dashboard. <em style={{color:T.cyan,fontStyle:"italic"}}>Exclusive.</em> Always.
         </p>
         <div style={{display:"flex",gap:12,justifyContent:"center",flexWrap:"wrap",marginBottom:22}}>
-          <Btn size="lg" onClick={()=>setShowAuth(true)}>Request Access →</Btn>
+          <Btn size="lg" onClick={()=>setShowAuth(true)}>Get Started →</Btn>
           <Btn variant="outline" size="lg" onClick={()=>onIntakeForm("hvac")}>Try the Intake Form</Btn>
         </div>
         <div style={{display:"flex",justifyContent:"center",gap:8,flexWrap:"wrap"}}>
@@ -944,9 +944,9 @@ function LandingPage({onLogin,onIntakeForm}){
 
     {/* INDUSTRIES */}
     <section id="industries" style={{padding:"clamp(48px,7vw,88px) 20px",borderTop:`1px solid ${T.border}`,borderBottom:`1px solid ${T.border}`}}>
-      <div style={{maxWidth:1060,margin:"0 auto"}}>
+      <div style={{maxWidth:1200,margin:"0 auto",width:"100%"}}>
         <p style={{textAlign:"center",fontSize:10,fontWeight:500,color:T.muted,textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:32,fontFamily:"'JetBrains Mono',monospace"}}>Built for service businesses that run on booked jobs</p>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:10}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12}}>
           {Object.entries(INDUSTRIES).map(([k,v])=>(
             <div key={k} onClick={()=>onIntakeForm(k)} style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:12,padding:"20px 16px",textAlign:"center",cursor:"pointer",transition:"all 0.22s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=v.color+"60";e.currentTarget.style.transform="translateY(-3px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border2;e.currentTarget.style.transform="none";}}>
               <div style={{fontSize:26,marginBottom:8}}>{v.icon}</div>
@@ -960,7 +960,7 @@ function LandingPage({onLogin,onIntakeForm}){
 
     {/* HOW IT WORKS */}
     <section id="how" style={{padding:"clamp(48px,7vw,88px) 20px"}}>
-      <div style={{maxWidth:1060,margin:"0 auto"}}>
+      <div style={{maxWidth:1200,margin:"0 auto",width:"100%"}}>
         <SE c="How It Works"/>
         <SH c="From customer intent to your calendar."/>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"clamp(20px,5vw,56px)",marginTop:36,alignItems:"start"}} className="grid-1-mobile">
@@ -996,7 +996,7 @@ function LandingPage({onLogin,onIntakeForm}){
 
     {/* METRICS */}
     <section style={{padding:"clamp(48px,7vw,88px) 20px",borderTop:`1px solid ${T.border}`,borderBottom:`1px solid ${T.border}`,background:T.surface}}>
-      <div style={{maxWidth:1060,margin:"0 auto"}}>
+      <div style={{maxWidth:1200,margin:"0 auto",width:"100%"}}>
         <SE c="By the Numbers"/>
         <SH c="Built for businesses that run lean."/>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:1,background:T.border,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden",marginTop:32}}>
@@ -1013,13 +1013,13 @@ function LandingPage({onLogin,onIntakeForm}){
 
     {/* FEATURES */}
     <section id="features" style={{padding:"clamp(48px,7vw,88px) 20px"}}>
-      <div style={{maxWidth:1060,margin:"0 auto"}}>
+      <div style={{maxWidth:1200,margin:"0 auto",width:"100%"}}>
         <SE c="Platform Features"/>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"clamp(16px,3vw,40px)",alignItems:"end",marginBottom:32}} className="grid-1-mobile">
           <SH c="Everything you need. Nothing you don't."/>
           <p style={{fontSize:14,color:T.offWhite,lineHeight:1.7,fontWeight:300}}>Purpose-built for service businesses. No bloated CRM, no learning curve.</p>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(230px,1fr))",gap:1,background:T.border,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:1,background:T.border,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
           {[{icon:"⚡",title:"Intelligent Lead Scoring",desc:"Scored across six dimensions before it reaches you."},{icon:"📊",title:"Real-Time Dashboard",desc:"Live pipeline with score breakdowns and booking status."},{icon:"🔗",title:"URL-Driven Campaigns",desc:"One link per ad. Each industry gets a custom intake flow."},{icon:"📋",title:"Industry-Specific Forms",desc:"HVAC, Roofing, Plumbing, Electrical — tailored questions."},{icon:"🔔",title:"Instant Notifications",desc:"In-app alert the moment a lead is assigned to you."},{icon:"📈",title:"Win/Loss Tracking",desc:"Track close rates by job type and season."}].map(f=>(
             <div key={f.title} style={{background:T.surface,padding:"clamp(18px,2vw,28px)",transition:"background 0.2s"}} onMouseEnter={e=>e.currentTarget.style.background=T.surface2} onMouseLeave={e=>e.currentTarget.style.background=T.surface}>
               <div style={{width:38,height:38,background:"rgba(37,99,235,0.12)",borderRadius:9,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,marginBottom:12,border:"1px solid rgba(37,99,235,0.2)"}}>{f.icon}</div>
@@ -1033,11 +1033,11 @@ function LandingPage({onLogin,onIntakeForm}){
 
     {/* PRICING */}
     <section id="pricing" style={{padding:"clamp(48px,7vw,88px) 20px",borderTop:`1px solid ${T.border}`}}>
-      <div style={{maxWidth:1060,margin:"0 auto",textAlign:"center"}}>
+      <div style={{maxWidth:1200,margin:"0 auto",width:"100%",textAlign:"center"}}>
         <SE c="Pricing"/>
         <SH c="Pay for what works." center/>
         <p style={{fontSize:14,color:T.offWhite,lineHeight:1.7,fontWeight:300,maxWidth:440,margin:"0 auto 36px"}}>Low base keeps costs predictable. Performance fee only when you close a job.</p>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,maxWidth:740,margin:"0 auto"}} className="grid-1-mobile">
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,maxWidth:860,margin:"0 auto"}} className="grid-1-mobile">
           {[{plan:"Starter",price:"299",perf:"$150",popular:false,features:["Up to 20 leads / month","Intelligent intake + scoring","Instant estimate generation","In-app notifications","Win/loss tracking","Exclusive leads always"]},
             {plan:"Growth",price:"499",perf:"$100",popular:true,features:["Up to 50 leads / month","Everything in Starter","Priority lead queue","CRM integrations","Dedicated account manager","Seasonal campaign boosts"]}].map(p=>(
             <div key={p.plan} style={{background:p.popular?`linear-gradient(135deg,rgba(37,99,235,0.08),${T.surface})`:T.surface,border:`1px solid ${p.popular?T.blue:T.border2}`,borderRadius:16,padding:"clamp(20px,3vw,32px)",position:"relative",transition:"transform 0.22s",textAlign:"left"}} onMouseEnter={e=>e.currentTarget.style.transform="translateY(-3px)"} onMouseLeave={e=>e.currentTarget.style.transform="none"}>
@@ -1059,7 +1059,7 @@ function LandingPage({onLogin,onIntakeForm}){
 
     {/* TESTIMONIALS */}
     <section style={{padding:"clamp(48px,7vw,88px) 20px",borderTop:`1px solid ${T.border}`,background:T.surface}}>
-      <div style={{maxWidth:1060,margin:"0 auto"}}>
+      <div style={{maxWidth:1200,margin:"0 auto",width:"100%"}}>
         <SE c="Reviews"/>
         <SH c="What our clients say."/>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:14,marginTop:32}}>
@@ -1079,7 +1079,7 @@ function LandingPage({onLogin,onIntakeForm}){
 
     {/* FAQ */}
     <section id="faq" style={{padding:"clamp(48px,7vw,88px) 20px",borderTop:`1px solid ${T.border}`}}>
-      <div style={{maxWidth:1060,margin:"0 auto",textAlign:"center"}}>
+      <div style={{maxWidth:1200,margin:"0 auto",width:"100%",textAlign:"center"}}>
         <SE c="FAQ"/>
         <SH c="Common questions." center/>
         <LandingFAQ/>
@@ -1093,7 +1093,7 @@ function LandingPage({onLogin,onIntakeForm}){
         <h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:"clamp(26px,4vw,44px)",lineHeight:1.1,letterSpacing:-1.5,marginBottom:14}}>Ready to fill your calendar with real jobs?</h2>
         <p style={{fontSize:14,color:T.offWhite,marginBottom:28,fontWeight:300}}>Join service businesses across Columbus with a qualified, exclusive pipeline.</p>
         <div style={{display:"flex",justifyContent:"center",gap:10,flexWrap:"wrap"}}>
-          <Btn size="lg" onClick={()=>setShowAuth(true)}>Request Access →</Btn>
+          <Btn size="lg" onClick={()=>setShowAuth(true)}>Get Started →</Btn>
           <Btn variant="outline" size="lg" onClick={()=>setShowAuth(true)}>See a Demo</Btn>
         </div>
       </div>
@@ -1101,8 +1101,8 @@ function LandingPage({onLogin,onIntakeForm}){
 
     {/* FOOTER */}
     <footer style={{borderTop:`1px solid ${T.border}`,padding:"clamp(28px,5vw,50px) 20px 28px"}}>
-      <div style={{maxWidth:1060,margin:"0 auto"}}>
-        <div style={{display:"grid",gridTemplateColumns:"2fr repeat(3,1fr)",gap:"clamp(20px,4vw,48px)",marginBottom:36}} className="grid-2-mobile">
+      <div style={{maxWidth:1200,margin:"0 auto",width:"100%"}}>
+        <div style={{display:"grid",gridTemplateColumns:"2fr repeat(3,1fr)",gap:"clamp(16px,3vw,40px)",marginBottom:36}} className="grid-2-mobile">
           <div>
             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><LogoMark size={26}/><span style={{fontFamily:"'DM Serif Display',serif",fontSize:17}}>Streamline</span></div>
             <p style={{fontSize:13,color:T.muted,lineHeight:1.6,maxWidth:200}}>Qualified leads for service businesses that run on booked jobs.</p>
