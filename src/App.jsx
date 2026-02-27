@@ -351,8 +351,8 @@ function Modal({open,onClose,title,children,width=540}){
     return()=>{document.body.style.overflow="";};
   },[open]);
   if(!open)return null;
-  return <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.78)",backdropFilter:"blur(8px)",zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
-    <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:"18px 18px 0 0",width:"100%",maxWidth:width,maxHeight:"92vh",overflow:"auto",animation:"slideUp 0.28s ease"}}>
+  return <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.78)",backdropFilter:"blur(8px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}}>
+    <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:18,width:"100%",maxWidth:width,maxHeight:"92vh",overflow:"auto",animation:"fadeUp 0.28s ease"}}>
       {title&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"18px 20px",borderBottom:`1px solid ${T.border}`,position:"sticky",top:0,background:T.surface,zIndex:1}}>
         <span style={{fontSize:16,fontWeight:600}}>{title}</span>
         <button onClick={onClose} style={{background:"none",border:"none",color:T.muted,cursor:"pointer",fontSize:22,lineHeight:1,padding:4}}>×</button>
@@ -718,47 +718,63 @@ function IntakeForm({industryKey="hvac",onBack}){
 }
 
 // ─── AUTH ─────────────────────────────────────────────────────────────────────
+// Accounts are provisioned by admin only. Contractors receive credentials via email.
 function AuthPage({onAuth}){
-  const [mode,setMode]=useState("login");
   const [email,setEmail]=useState("demo@streamline.com");
   const [password,setPassword]=useState("demo1234");
-  const [company,setCompany]=useState("");
   const [error,setError]=useState("");
   const [loading,setLoading]=useState(false);
+  const [showForgot,setShowForgot]=useState(false);
+  const [resetSent,setResetSent]=useState(false);
 
   const submit=async()=>{
     setError("");setLoading(true);
     try{
-      if(mode==="login"){
-        const{session}=await db.signIn(email,password);
-        if(!session)throw new Error("Login failed — check your credentials.");
-        const business=await db.getBusiness(session.user.id);
-        onAuth({...session.user,...business});
-      }else{
-        const{session}=await db.signUp(email,password);
-        if(!session){setError("Account created! Check your email to confirm.");setLoading(false);return;}
-        const business=await db.upsertBusiness({id:session.user.id,email,company,industry:"HVAC",plan:"Starter",notify_email:email});
-        onAuth({...session.user,...business});
-      }
+      const{session}=await db.signIn(email,password);
+      if(!session)throw new Error("Login failed — check your credentials.");
+      const business=await db.getBusiness(session.user.id);
+      onAuth({...session.user,...business});
     }catch(e){setError(e.message||"Something went wrong.");}
+    setLoading(false);
+  };
+
+  const sendReset=async()=>{
+    if(!email.trim()){setError("Enter your email address first");return;}
+    setLoading(true);
+    try{
+      const{error:e}=await sb.auth.resetPasswordForEmail(email,{redirectTo:window.location.origin});
+      if(e)throw e;
+      setResetSent(true);setShowForgot(false);
+    }catch(e){setError(e.message||"Reset failed. Email hello@streamline.io for help.");}
     setLoading(false);
   };
 
   return <div>
     <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:22,justifyContent:"center"}}><LogoMark size={32}/><span style={{fontFamily:"'DM Serif Display',serif",fontSize:20}}>Streamline</span></div>
-    <h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:22,letterSpacing:-0.5,marginBottom:5,textAlign:"center"}}>{mode==="login"?"Welcome back.":"Create your account."}</h2>
-    <p style={{color:T.muted,fontSize:13,marginBottom:18,textAlign:"center"}}>{mode==="login"?"Sign in to your lead dashboard.":"Start receiving qualified leads today."}</p>
-    {mode==="login"&&<div style={{background:"rgba(37,99,235,0.08)",border:"1px solid rgba(37,99,235,0.2)",borderRadius:10,padding:"10px 14px",marginBottom:16,fontSize:13}}><span style={{color:T.blueL,fontWeight:600}}>Demo: </span>demo@streamline.com / demo1234</div>}
+    <h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:22,letterSpacing:-0.5,marginBottom:5,textAlign:"center"}}>Welcome back.</h2>
+    <p style={{color:T.muted,fontSize:13,marginBottom:18,textAlign:"center"}}>Sign in to your lead dashboard.</p>
+    <div style={{background:"rgba(37,99,235,0.08)",border:"1px solid rgba(37,99,235,0.2)",borderRadius:10,padding:"10px 14px",marginBottom:16,fontSize:13}}><span style={{color:T.blueL,fontWeight:600}}>Demo: </span>demo@streamline.com / demo1234</div>
+    {resetSent&&<div style={{background:"rgba(16,185,129,0.08)",border:"1px solid rgba(16,185,129,0.2)",borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:13,color:T.green}}>✓ Password reset email sent — check your inbox.</div>}
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
-      {mode==="signup"&&<Inp label="Company Name" value={company} onChange={setCompany} placeholder="Apex Climate Control" required/>}
       <Inp label="Email" value={email} onChange={setEmail} type="email" placeholder="you@company.com" required/>
       <Inp label="Password" value={password} onChange={setPassword} type="password" placeholder="••••••••" required/>
     </div>
     {error&&<div style={{marginTop:12,padding:"10px 14px",background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.25)",borderRadius:10,fontSize:13,color:"#F87171"}}>{error}</div>}
-    <Btn onClick={submit} disabled={loading} fullWidth style={{marginTop:18}}>{loading?<span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><Spinner size={15}/>{mode==="login"?"Signing in…":"Creating…"}</span>:mode==="login"?"Sign In →":"Create Account →"}</Btn>
-    <div style={{textAlign:"center",marginTop:14,fontSize:13,color:T.muted}}>
-      {mode==="login"?"No account? ":"Have an account? "}
-      <span onClick={()=>setMode(mode==="login"?"signup":"login")} style={{color:T.blueL,cursor:"pointer",fontWeight:500}}>{mode==="login"?"Sign up":"Sign in"}</span>
+    <Btn onClick={submit} disabled={loading} fullWidth style={{marginTop:18}}>
+      {loading?<span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><Spinner size={15}/>Signing in…</span>:"Sign In →"}
+    </Btn>
+    <div style={{textAlign:"center",marginTop:12,fontSize:13,color:T.muted}}>
+      <span onClick={()=>setShowForgot(s=>!s)} style={{color:T.blueL,cursor:"pointer",fontWeight:500}}>Forgot password?</span>
+    </div>
+    {showForgot&&(
+      <div style={{marginTop:12,padding:"14px",background:T.surface2,borderRadius:10,border:`1px solid ${T.border2}`}}>
+        <div style={{fontSize:13,color:T.offWhite,marginBottom:10}}>Enter your email above and click below to receive a reset link.</div>
+        <Btn variant="outline" onClick={sendReset} disabled={loading} fullWidth>Send Reset Email</Btn>
+      </div>
+    )}
+    <div style={{marginTop:16,padding:"12px 14px",background:"rgba(255,255,255,0.02)",border:`1px solid ${T.border}`,borderRadius:10,fontSize:12,color:T.muted,textAlign:"center",lineHeight:1.7}}>
+      Don't have an account? Accounts are set up by the Streamline team after your application is approved.<br/>
+      <a href="mailto:hello@streamline.io" style={{color:T.blueL,fontWeight:500}}>Contact hello@streamline.io</a> for access.
     </div>
   </div>;
 }
@@ -1583,7 +1599,7 @@ function Dashboard({user,onLogout}){
   const sc={new:leads.filter(l=>l.status==="new").length,contacted:leads.filter(l=>l.status==="contacted").length,won,lost:leads.filter(l=>l.status==="lost").length};
   const hotCount=leads.filter(l=>l.tier==="hot").length;
 
-  const TABS=[{id:"pipeline",label:"Pipeline",icon:"⚡"},{id:"analytics",label:"Analytics",icon:"📊"},{id:"settings",label:"Settings",icon:"⚙️"}];
+  const TABS=[{id:"pipeline",label:"Pipeline",icon:"⚡"},{id:"analytics",label:"Analytics",icon:"📊"},{id:"earnings",label:"Earnings",icon:"💰"},{id:"goals",label:"Goals",icon:"🎯"},{id:"resources",label:"Resources",icon:"📚"},{id:"settings",label:"Settings",icon:"⚙️"}];
 
   return <div style={{minHeight:"100vh",background:T.bg,display:"flex",flexDirection:"column",width:"100%"}}>
     {/* NAV */}
@@ -1799,6 +1815,12 @@ function Dashboard({user,onLogout}){
         </div>
       ):view==="analytics"?(
         <AnalyticsView leads={leads} user={currentUser}/>
+      ):view==="earnings"?(
+        <EarningsView leads={leads} user={currentUser}/>
+      ):view==="goals"?(
+        <GoalsView leads={leads} user={currentUser} toast={showToast}/>
+      ):view==="resources"?(
+        <ResourcesView user={currentUser}/>
       ):(
         <div style={{animation:"fadeIn 0.3s ease"}}>
           <h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:"clamp(20px,3vw,26px)",letterSpacing:-0.8,marginBottom:5}}>Settings</h2>
@@ -2461,11 +2483,19 @@ function LandingPage({onLogin,onIntakeForm,onApply,onIndustry}){
           <p style={{fontSize:14,color:T.offWhite,lineHeight:1.7,fontWeight:300}}>Purpose-built for service businesses. No bloated CRM, no learning curve.</p>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:1,background:T.border,border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
-          {[{icon:"⚡",title:"Intelligent Lead Scoring",desc:"Scored across six dimensions before it reaches you."},{icon:"📊",title:"Real-Time Dashboard",desc:"Live pipeline with score breakdowns and booking status."},{icon:"🔒",title:"Exclusive Every Time",desc:"One contractor per lead. Always. No exceptions."},{icon:"📋",title:"Industry-Specific Forms",desc:"HVAC, Roofing, Plumbing, Electrical — tailored questions."},{icon:"🔔",title:"Instant Notifications",desc:"In-app alert the moment a lead is assigned to you."},{icon:"📈",title:"Win/Loss Tracking",desc:"Track close rates by job type and season."}].map(f=>(
-            <div key={f.title} style={{background:T.surface,padding:"clamp(18px,2vw,28px)",transition:"background 0.2s"}} onMouseEnter={e=>e.currentTarget.style.background=T.surface2} onMouseLeave={e=>e.currentTarget.style.background=T.surface}>
+          {[
+            {icon:"⚡",title:"Intelligent Lead Scoring",desc:"Scored across six dimensions before it reaches you.",action:()=>scrollTo("how"),cta:"See how it works"},
+            {icon:"📊",title:"Real-Time Dashboard",desc:"Live pipeline with score breakdowns and booking status.",action:()=>setShowAuth(true),cta:"View demo dashboard"},
+            {icon:"🔒",title:"Exclusive Every Time",desc:"One contractor per lead. Always. No exceptions.",action:()=>scrollTo("pricing"),cta:"See pricing"},
+            {icon:"📋",title:"Industry-Specific Forms",desc:"HVAC, Roofing, Plumbing, Electrical — tailored questions.",action:()=>scrollTo("industries"),cta:"Browse industries"},
+            {icon:"🔔",title:"Instant Notifications",desc:"In-app alert the moment a lead is assigned to you.",action:()=>scrollTo("how"),cta:"Learn more"},
+            {icon:"📈",title:"Win/Loss Tracking",desc:"Track close rates by job type and season.",action:()=>setShowAuth(true),cta:"See the dashboard"},
+          ].map(f=>(
+            <div key={f.title} onClick={f.action} style={{background:T.surface,padding:"clamp(18px,2vw,28px)",transition:"all 0.2s",cursor:"pointer",position:"relative"}} onMouseEnter={e=>{e.currentTarget.style.background=T.surface2;e.currentTarget.querySelector(".feat-cta").style.opacity="1";e.currentTarget.querySelector(".feat-cta").style.transform="translateY(0)";}} onMouseLeave={e=>{e.currentTarget.style.background=T.surface;e.currentTarget.querySelector(".feat-cta").style.opacity="0";e.currentTarget.querySelector(".feat-cta").style.transform="translateY(4px)";}}>
               <div style={{width:38,height:38,background:"rgba(37,99,235,0.12)",borderRadius:9,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,marginBottom:12,border:"1px solid rgba(37,99,235,0.2)"}}>{f.icon}</div>
               <div style={{fontSize:14,fontWeight:600,marginBottom:6}}>{f.title}</div>
-              <div style={{fontSize:13,color:T.muted,lineHeight:1.6}}>{f.desc}</div>
+              <div style={{fontSize:13,color:T.muted,lineHeight:1.6,marginBottom:8}}>{f.desc}</div>
+              <div className="feat-cta" style={{fontSize:11,color:T.blueL,fontWeight:600,opacity:0,transform:"translateY(4px)",transition:"all 0.2s",display:"flex",alignItems:"center",gap:4}}>{f.cta} <span style={{fontSize:13}}>→</span></div>
             </div>
           ))}
         </div>
@@ -2485,19 +2515,32 @@ function LandingPage({onLogin,onIntakeForm,onApply,onIndustry}){
             {plan:"Growth",price:"499",perf:"100",popular:true,features:["Everything in Starter","Priority lead queue — first access in your market","Lower performance fee per closed job","CRM integrations and data export","Dedicated account manager","Seasonal campaign volume boosts"]},
           ].map(p=>(
             <div key={p.plan} style={{background:p.popular?`linear-gradient(135deg,rgba(37,99,235,0.1),${T.surface})`:T.surface,border:`1px solid ${p.popular?T.blue:T.border2}`,borderRadius:16,padding:"clamp(20px,3vw,32px)",position:"relative",transition:"transform 0.22s",textAlign:"left",display:"flex",flexDirection:"column"}} onMouseEnter={e=>e.currentTarget.style.transform="translateY(-3px)"} onMouseLeave={e=>e.currentTarget.style.transform="none"}>
-              {p.popular&&<><div style={{display:"inline-flex",background:T.blue,color:"white",fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:4,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:12,fontFamily:"'JetBrains Mono',monospace"}}>Most Popular</div><div style={{position:"absolute",top:0,left:0,right:0,height:2,background:`linear-gradient(90deg,transparent,${T.blue},${T.cyan},transparent)`}}/></>}
+              {p.popular&&<div style={{position:"absolute",top:0,left:0,right:0,height:2,background:`linear-gradient(90deg,transparent,${T.blue},${T.cyan},transparent)`}}/>}
+              {/* ROW 1: Popular badge — reserved height so both cards align */}
+              <div style={{height:28,marginBottom:10,display:"flex",alignItems:"center"}}>
+                {p.popular&&<div style={{display:"inline-flex",background:T.blue,color:"white",fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:4,textTransform:"uppercase",letterSpacing:"0.08em",fontFamily:"'JetBrains Mono',monospace"}}>Most Popular</div>}
+              </div>
+              {/* ROW 2: Plan name */}
               <div style={{fontSize:11,fontWeight:600,color:T.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6,fontFamily:"'JetBrains Mono',monospace"}}>{p.plan}</div>
-              <div style={{display:"flex",alignItems:"baseline",gap:2,marginBottom:2}}>
+              {/* ROW 3: Price */}
+              <div style={{display:"flex",alignItems:"baseline",gap:2,marginBottom:8}}>
                 <span style={{fontFamily:"'DM Sans',sans-serif",fontSize:18,fontWeight:300,color:T.muted,alignSelf:"flex-start",marginTop:8}}>$</span>
                 <span style={{fontFamily:"'DM Serif Display',serif",fontSize:"clamp(36px,5vw,52px)",lineHeight:1,letterSpacing:-2}}>{p.price}</span>
                 <span style={{fontSize:14,color:T.muted,fontWeight:300}}>/mo</span>
               </div>
-              <div style={{fontSize:11,color:T.blueL,fontFamily:"'JetBrains Mono',monospace",marginBottom:20,padding:"5px 10px",background:"rgba(37,99,235,0.1)",borderRadius:6,border:"1px solid rgba(37,99,235,0.2)",display:"inline-block"}}>+ ${p.perf} performance fee per closed job</div>
+              {/* ROW 4: Perf fee badge — fixed height */}
+              <div style={{height:32,marginBottom:16,display:"flex",alignItems:"center"}}>
+                <div style={{fontSize:11,color:T.blueL,fontFamily:"'JetBrains Mono',monospace",padding:"5px 10px",background:"rgba(37,99,235,0.1)",borderRadius:6,border:"1px solid rgba(37,99,235,0.2)",whiteSpace:"nowrap"}}>+ ${p.perf} performance fee per closed job</div>
+              </div>
+              {/* ROW 5: Divider */}
               <div style={{height:1,background:T.border,marginBottom:18}}/>
+              {/* ROW 6: Features — flex:1 pushes button to bottom */}
               <div style={{display:"flex",flexDirection:"column",gap:9,marginBottom:24,flex:1}}>
                 {p.features.map(f=><div key={f} style={{display:"flex",alignItems:"flex-start",gap:8,fontSize:13,color:T.offWhite}}><span style={{color:T.blueL,flexShrink:0}}>›</span>{f}</div>)}
               </div>
-              <button onClick={onApply} style={{width:"100%",padding:"13px",borderRadius:10,fontSize:14,fontWeight:600,cursor:"pointer",background:p.popular?T.blue:"none",color:p.popular?"white":T.offWhite,border:p.popular?"none":`1px solid ${T.border2}`,transition:"all 0.2s",touchAction:"manipulation"}}>Apply Now</button>
+              {/* ROW 7: CTA button */}
+              <button onClick={onApply} style={{width:"100%",padding:"13px",borderRadius:10,fontSize:14,fontWeight:600,cursor:"pointer",background:p.popular?T.blue:"none",color:p.popular?"white":T.offWhite,border:p.popular?"none":`1px solid ${T.border2}`,transition:"background 0.2s",touchAction:"manipulation"}} onMouseEnter={e=>{if(!p.popular)e.currentTarget.style.background=T.surface2;}} onMouseLeave={e=>{if(!p.popular)e.currentTarget.style.background="none";}}>Apply Now</button>
+              {/* ROW 8: Trust note */}
               <div style={{fontSize:10,color:T.muted,textAlign:"center",marginTop:6}}>Secure payment via Stripe · Cancel anytime</div>
             </div>
           ))}
@@ -4029,6 +4072,7 @@ function AdminDashboard({ adminUser, onLogout }) {
   const [apps, setApps] = useState([]);
   const [cancelRequests, setCancelRequests] = useState(0);
   const [allBilling, setAllBilling] = useState([]);
+  const [followUpCount, setFollowUpCount] = useState(0);
 
   // Load application count + billing alerts for badges
   useEffect(()=>{
@@ -4198,9 +4242,13 @@ function AdminDashboard({ adminUser, onLogout }) {
   { id: "pipeline", label: `Pipeline ${apps.length>0?"("+apps.length+")":""}`, icon: "🎯" },
   { id: "billing", label: `Billing ${cancelRequests>0?"("+cancelRequests+")":""}`, icon: "💳" },
   { id: "invoicing", label: "Invoices", icon: "🧾" },
+  { id: "monthend", label: "Month-End", icon: "📆" },
+  { id: "trust", label: "Trust Scores", icon: "🛡️" },
+  { id: "followup", label: `Follow-Up ${followUpCount>0?"("+followUpCount+")":""}`, icon: "📬" },
   { id: "contractors", label: "Contractors", icon: "👥" },
   { id: "unassigned", label: `Unassigned ${unassignedLeads.length > 0 ? "("+unassignedLeads.length+")" : ""}`, icon: "📥" },
   { id: "overview", label: "Analytics", icon: "📊" },
+  { id: "tests", label: "Tests", icon: "🧪" },
 ].map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{ background: activeTab === tab.id ? T.surface2 : "none", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 13px", borderRadius: 7, color: activeTab === tab.id ? T.white : T.muted, transition: "all 0.2s", display: "flex", alignItems: "center", gap: 5 }}>
               <span style={{ fontSize: 12 }}>{tab.icon}</span>{tab.label}
@@ -4220,6 +4268,14 @@ function AdminDashboard({ adminUser, onLogout }) {
           <AdminInvoicing contractors={contractors} toast={showToast}/>
         ) : activeTab === "billing" ? (
           <AdminBillingView contractors={contractors} allBilling={allBilling} onRefresh={()=>{db.getAllBilling().then(d=>{setAllBilling(d);setCancelRequests(d.filter(b=>b.status==="cancel_pending").length);});loadContractors();}} toast={showToast}/>
+        ) : activeTab === "monthend" ? (
+          <AdminMonthEndBilling contractors={contractors} toast={showToast}/>
+        ) : activeTab === "trust" ? (
+          <AdminTrustScores contractors={contractors} toast={showToast}/>
+        ) : activeTab === "followup" ? (
+          <AdminFollowUpQueue contractors={contractors} toast={showToast}/>
+        ) : activeTab === "tests" ? (
+          <AdminTestSuite contractors={contractors} toast={showToast}/>
         ) : activeTab === "overview" ? (
           <AdminStats contractors={contractors}/>
         ) : activeTab === "unassigned" ? (
@@ -4369,6 +4425,1088 @@ function AdminDashboard({ adminUser, onLogout }) {
         />
       )}
       {toast && <Toast message={toast.message} type={toast.type} onDone={() => setToast(null)} />}
+    </div>
+  );
+}
+
+// ─── F. EARNINGS VIEW (Contractor) ────────────────────────────────────────────
+function EarningsView({leads,user}){
+  const [invoices,setInvoices]=useState([]);
+  const [billing,setBilling]=useState(null);
+  useEffect(()=>{
+    db.getInvoices(user.id).then(d=>setInvoices(d)).catch(()=>{});
+    db.getBilling(user.id).then(d=>setBilling(d)).catch(()=>{});
+  },[user.id]);
+
+  const wonLeads=leads.filter(l=>l.status==="won");
+  const perfFee=user.plan==="Growth"?100:150;
+  const monthStart=new Date(new Date().getFullYear(),new Date().getMonth(),1);
+  const wonThisMonth=wonLeads.filter(l=>new Date(l.completed_at||l.created_at)>=monthStart);
+  const unbilledJobs=wonLeads.filter(l=>!l.billed);
+  const unbilledFees=unbilledJobs.length*perfFee;
+  const totalJobValue=wonLeads.reduce((s,l)=>s+Number(l.job_value||0),0);
+  const totalPaid=invoices.filter(i=>i.status==="paid").reduce((s,i)=>s+Number(i.total_amount||0),0);
+  const totalOwed=invoices.filter(i=>i.status==="sent").reduce((s,i)=>s+Number(i.total_amount||0),0);
+  const subFee=user.plan==="Growth"?499:299;
+  const closeRate=leads.length>0?Math.round((wonLeads.length/leads.length)*100):0;
+  const roi=totalJobValue>0&&totalPaid>0?Math.round((totalJobValue/(totalPaid+subFee))*10)/10:0;
+
+  return(
+    <div style={{animation:"fadeIn 0.3s ease"}}>
+      <div style={{marginBottom:24}}>
+        <h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:"clamp(20px,3vw,26px)",letterSpacing:-0.8,marginBottom:5}}>Earnings</h2>
+        <p style={{color:T.muted,fontSize:13}}>Your revenue, fees, and ROI from Streamline leads.</p>
+      </div>
+
+      {/* KPI grid */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:24}} className="grid-2-mobile">
+        {[
+          {label:"Total Job Revenue",value:`$${totalJobValue.toLocaleString()}`,color:T.green,icon:"💰",sub:"From won leads"},
+          {label:"Fees Paid",value:`$${totalPaid.toLocaleString()}`,color:T.amber,icon:"🧾",sub:"Performance fees invoiced"},
+          {label:"Fees Owed",value:`$${totalOwed.toLocaleString()}`,color:totalOwed>0?T.red:T.muted,icon:"⏳",sub:"Awaiting payment"},
+          {label:"Return on Spend",value:roi>0?`${roi}×`:"—",color:T.cyan,icon:"📈",sub:"Revenue per $1 in fees"},
+        ].map(s=>(
+          <div key={s.label} style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:12,padding:"16px 18px"}}>
+            <div style={{fontSize:20,marginBottom:8}}>{s.icon}</div>
+            <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:22,fontWeight:700,color:s.color,lineHeight:1,marginBottom:3}}>{s.value}</div>
+            <div style={{fontSize:11,color:T.white,fontWeight:500,marginBottom:2}}>{s.label}</div>
+            <div style={{fontSize:11,color:T.muted}}>{s.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:24}} className="grid-1-mobile">
+        {/* This month summary */}
+        <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:12,padding:20}}>
+          <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:14}}>This Month</div>
+          {[
+            ["Subscription",`$${subFee}/mo`,T.offWhite],
+            ["Jobs closed",`${wonThisMonth.length} job${wonThisMonth.length!==1?"s":""}`,T.green],
+            ["Performance fees",`$${wonThisMonth.length*perfFee}`,T.amber],
+            ["Total cost this month",`$${subFee+wonThisMonth.length*perfFee}`,T.white],
+          ].map(([k,v,c])=>(
+            <div key={k} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 0",borderBottom:`1px solid ${T.border}`}}>
+              <span style={{fontSize:13,color:T.muted}}>{k}</span>
+              <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:13,fontWeight:600,color:c}}>{v}</span>
+            </div>
+          ))}
+          <div style={{marginTop:14,background:"rgba(16,185,129,0.06)",border:"1px solid rgba(16,185,129,0.2)",borderRadius:8,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontSize:12,color:T.offWhite}}>Est. revenue from closes</span>
+            <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:14,fontWeight:700,color:T.green}}>${wonThisMonth.reduce((s,l)=>s+Number(l.job_value||0),0).toLocaleString()}</span>
+          </div>
+        </div>
+
+        {/* ROI breakdown */}
+        <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:12,padding:20}}>
+          <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:14}}>Performance Breakdown</div>
+          {[
+            ["Leads received",leads.length],
+            ["Jobs won",wonLeads.length],
+            ["Close rate",`${closeRate}%`],
+            ["Avg job value",wonLeads.length>0?`$${Math.round(totalJobValue/wonLeads.length).toLocaleString()}`:"—"],
+            ["Fee per job",`$${perfFee} flat`],
+            ["Unbilled jobs",`${unbilledJobs.length} · $${unbilledFees} pending`],
+          ].map(([k,v])=>(
+            <div key={k} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 0",borderBottom:`1px solid ${T.border}`}}>
+              <span style={{fontSize:13,color:T.muted}}>{k}</span>
+              <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:13,fontWeight:500,color:T.offWhite}}>{v}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Invoice history */}
+      <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:12,overflow:"hidden"}}>
+        <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.border}`,fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em"}}>Invoice History</div>
+        {invoices.length===0?(
+          <div style={{padding:40,textAlign:"center",color:T.muted,fontSize:13}}>No invoices yet — your first invoice will appear here after your first month-end billing.</div>
+        ):invoices.map((inv,i)=>(
+          <div key={inv.id} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 100px",padding:"12px 18px",borderBottom:i<invoices.length-1?`1px solid ${T.border}`:"none",alignItems:"center",fontSize:13}}>
+            <div style={{fontFamily:"'JetBrains Mono',monospace",color:T.blueL,fontWeight:600}}>{inv.invoice_number}</div>
+            <div style={{color:T.muted}}>{inv.period}</div>
+            <div style={{color:T.offWhite}}>{inv.line_item_count} job{inv.line_item_count!==1?"s":""}</div>
+            <div style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:700,color:inv.status==="paid"?T.green:T.amber}}>${Number(inv.total_amount||0).toLocaleString()}</div>
+            <div><span style={{fontSize:10,background:inv.status==="paid"?"rgba(16,185,129,0.12)":"rgba(245,158,11,0.1)",color:inv.status==="paid"?T.green:T.amber,border:`1px solid ${inv.status==="paid"?"rgba(16,185,129,0.3)":"rgba(245,158,11,0.3)"}`,borderRadius:4,padding:"2px 8px",fontWeight:600,textTransform:"uppercase"}}>{inv.status}</span></div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── G. GOALS VIEW (Contractor) ───────────────────────────────────────────────
+function GoalsView({leads,user,toast}){
+  const storageKey=`goals_${user.id}`;
+  const [goals,setGoals]=useState({contactTarget:10,closeTarget:3,revenueTarget:10000});
+  const [editing,setEditing]=useState(false);
+  const [draft,setDraft]=useState({});
+
+  useEffect(()=>{
+    try{const saved=localStorage.getItem(storageKey);if(saved)setGoals(JSON.parse(saved));}catch(e){}
+  },[storageKey]);
+
+  const saveGoals=()=>{
+    const updated={...goals,...draft};
+    setGoals(updated);
+    try{localStorage.setItem(storageKey,JSON.stringify(updated));}catch(e){}
+    setEditing(false);
+    toast({message:"Goals saved",type:"success"});
+  };
+
+  const now=new Date();
+  const monthStart=new Date(now.getFullYear(),now.getMonth(),1);
+  const monthLeads=leads.filter(l=>new Date(l.created_at)>=monthStart);
+  const contacted=monthLeads.filter(l=>l.status==="contacted"||l.status==="won").length;
+  const closed=monthLeads.filter(l=>l.status==="won").length;
+  const revenue=monthLeads.filter(l=>l.status==="won").reduce((s,l)=>s+Number(l.job_value||0),0);
+  const daysInMonth=new Date(now.getFullYear(),now.getMonth()+1,0).getDate();
+  const daysPassed=now.getDate();
+  const pctMonth=Math.round((daysPassed/daysInMonth)*100);
+
+  const metrics=[
+    {label:"Leads Contacted",current:contacted,target:goals.contactTarget,color:T.cyan,icon:"📞",unit:"",hint:"Leads you've called or messaged this month"},
+    {label:"Jobs Closed",current:closed,target:goals.closeTarget,color:T.green,icon:"✓",unit:"",hint:"Won jobs logged this month"},
+    {label:"Revenue Generated",current:revenue,target:goals.revenueTarget,color:T.amber,icon:"💰",unit:"$",hint:"Total job value from won leads this month"},
+  ];
+
+  const daysLeft=daysInMonth-daysPassed;
+  const onTrack=metrics.filter(m=>{
+    const pctGoal=(m.current/m.target)*100;
+    return pctGoal>=pctMonth;
+  }).length;
+
+  return(
+    <div style={{animation:"fadeIn 0.3s ease"}}>
+      <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:24,flexWrap:"wrap",gap:12}}>
+        <div>
+          <h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:"clamp(20px,3vw,26px)",letterSpacing:-0.8,marginBottom:5}}>Monthly Goals</h2>
+          <p style={{color:T.muted,fontSize:13}}>{now.toLocaleString("default",{month:"long",year:"numeric"})} · {daysLeft} days left · {onTrack}/3 goals on track</p>
+        </div>
+        <Btn variant="outline" onClick={()=>{setDraft({contactTarget:goals.contactTarget,closeTarget:goals.closeTarget,revenueTarget:goals.revenueTarget});setEditing(true);}}>Edit Goals</Btn>
+      </div>
+
+      {/* Month progress bar */}
+      <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:12,padding:"14px 18px",marginBottom:20}}>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:6,fontSize:12}}>
+          <span style={{color:T.muted}}>Month progress</span>
+          <span style={{fontFamily:"'JetBrains Mono',monospace",color:T.offWhite}}>{daysPassed}/{daysInMonth} days ({pctMonth}%)</span>
+        </div>
+        <div style={{height:4,background:T.border,borderRadius:2,overflow:"hidden"}}>
+          <div style={{width:`${pctMonth}%`,height:"100%",background:`linear-gradient(90deg,${T.blue},${T.cyan})`,borderRadius:2,transition:"width 0.5s ease"}}/>
+        </div>
+      </div>
+
+      {/* Goal cards */}
+      <div style={{display:"flex",flexDirection:"column",gap:16,marginBottom:24}}>
+        {metrics.map(m=>{
+          const pct=m.target>0?Math.min(Math.round((m.current/m.target)*100),100):0;
+          const onT=(m.current/m.target)*100>=pctMonth;
+          const remaining=Math.max(m.target-m.current,0);
+          return(
+            <div key={m.label} style={{background:T.surface,border:`1px solid ${onT?"rgba(16,185,129,0.25)":T.border2}`,borderRadius:12,padding:"20px 22px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+                <div>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                    <span style={{fontSize:18}}>{m.icon}</span>
+                    <span style={{fontSize:15,fontWeight:600,color:T.white}}>{m.label}</span>
+                    <span style={{fontSize:10,background:onT?"rgba(16,185,129,0.12)":"rgba(245,158,11,0.1)",color:onT?T.green:T.amber,border:`1px solid ${onT?"rgba(16,185,129,0.3)":"rgba(245,158,11,0.3)"}`,borderRadius:4,padding:"2px 7px",fontWeight:600}}>{onT?"ON TRACK":"BEHIND"}</span>
+                  </div>
+                  <div style={{fontSize:12,color:T.muted}}>{m.hint}</div>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:28,fontWeight:700,color:m.color,lineHeight:1}}>{m.unit}{typeof m.current==="number"&&m.unit==="$"?m.current.toLocaleString():m.current}</div>
+                  <div style={{fontSize:11,color:T.muted}}>of {m.unit}{m.unit==="$"?Number(m.target).toLocaleString():m.target} goal</div>
+                </div>
+              </div>
+              <div style={{height:8,background:T.border,borderRadius:4,overflow:"hidden",marginBottom:6}}>
+                <div style={{width:`${pct}%`,height:"100%",background:pct>=100?T.green:pct>=pctMonth?T.blue:T.amber,borderRadius:4,transition:"width 0.6s ease"}}/>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:T.muted}}>
+                <span>{pct}% complete</span>
+                <span>{remaining>0?`${m.unit}${m.unit==="$"?remaining.toLocaleString():remaining} to go`:"✓ Goal reached!"}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Tips based on performance */}
+      <div style={{background:"rgba(37,99,235,0.06)",border:"1px solid rgba(37,99,235,0.2)",borderRadius:12,padding:"16px 18px"}}>
+        <div style={{fontSize:13,fontWeight:600,color:T.blueL,marginBottom:10}}>💡 This month's focus</div>
+        {closed<goals.closeTarget&&daysLeft<=7&&<div style={{fontSize:13,color:T.offWhite,marginBottom:6}}>⚡ Final stretch — {goals.closeTarget-closed} more close{goals.closeTarget-closed!==1?"s":""} needed. Follow up with all "Contacted" leads today.</div>}
+        {contacted<goals.contactTarget&&<div style={{fontSize:13,color:T.offWhite,marginBottom:6}}>📞 You have {leads.filter(l=>l.status==="new").length} new uncontacted lead{leads.filter(l=>l.status==="new").length!==1?"s":""}. Call within 1 hour for best close rate.</div>}
+        {closed>=goals.closeTarget&&<div style={{fontSize:13,color:T.green,marginBottom:6}}>🎉 Close goal reached! Consider raising your target next month.</div>}
+        <div style={{fontSize:12,color:T.muted}}>Leads contacted within 1 hour close at 3× the rate of those called after 24 hours.</div>
+      </div>
+
+      {/* Edit goals modal */}
+      <Modal open={editing} onClose={()=>setEditing(false)} title="Set Monthly Goals">
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          <p style={{fontSize:13,color:T.muted}}>Set realistic monthly targets. These are private and only visible to you.</p>
+          <Inp label="Leads to Contact" value={String(draft.contactTarget||"")} onChange={v=>setDraft(d=>({...d,contactTarget:Number(v)}))} type="number" placeholder="10" hint="How many leads will you call or message this month?"/>
+          <Inp label="Jobs to Close" value={String(draft.closeTarget||"")} onChange={v=>setDraft(d=>({...d,closeTarget:Number(v)}))} type="number" placeholder="3" hint="How many won jobs are you targeting?"/>
+          <Inp label="Revenue Goal ($)" value={String(draft.revenueTarget||"")} onChange={v=>setDraft(d=>({...d,revenueTarget:Number(v)}))} type="number" placeholder="10000" hint="Total job value from won leads this month"/>
+          <div style={{display:"flex",gap:8}}>
+            <Btn variant="outline" onClick={()=>setEditing(false)} style={{flex:1}}>Cancel</Btn>
+            <Btn onClick={saveGoals} style={{flex:2}}>Save Goals</Btn>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+// ─── H. RESOURCES VIEW (Contractor) ───────────────────────────────────────────
+function ResourcesView({user}){
+  const [open,setOpen]=useState(null);
+  const intakeUrl=`${window.location.origin}/?industry=${(user.industry||"hvac").toLowerCase()}&bid=${user.id}`;
+
+  const RESOURCES=[
+    {
+      id:"follow_up_script",icon:"📞",title:"Follow-Up Call Script",tag:"Sales",
+      preview:"A proven 3-minute script for calling new leads within the first hour.",
+      content:`FOLLOW-UP CALL SCRIPT
+─────────────────────
+Best time to call: within 60 minutes of receiving the lead.
+
+OPENING (15 seconds)
+"Hi, is this [Name]? Great — this is [Your Name] from [Company]. You just filled out a request for [service type] help. I'm calling to introduce myself and get you taken care of. Do you have about 2 minutes?"
+
+DISCOVERY (60 seconds)
+• "Can you tell me a bit more about what's going on?"
+• "How long has this been an issue?"
+• "Is this affecting your comfort/daily routine right now?"
+• "When are you hoping to get this resolved?"
+
+POSITIONING (30 seconds)
+"Based on what you've told me, this sounds like something we can definitely help with. We specialize in [industry] in [city] and typically have availability within [X days]."
+
+NEXT STEP (30 seconds)
+"I'd love to come take a look and give you a no-obligation quote. What's better for you — [Day A] or [Day B]?"
+
+OBJECTION: "I'm getting other quotes"
+→ "That's totally reasonable. I'd just ask that you give us a shot — our quotes are free, and we'll show you exactly what the work involves so you can compare apples to apples."
+
+OBJECTION: "I need to think about it"
+→ "Of course. Can I follow up with you [specific day]? Issues like this often get more expensive the longer they wait, and I want to make sure you have all the info you need."
+
+CLOSE
+"Perfect. I'll send you a confirmation text with my contact info. See you [Day/Time]."
+
+POST-CALL
+• Mark lead as "Contacted" in your Streamline dashboard
+• Send a brief text: "Hi [Name], it's [Your Name] from [Company]. Looking forward to seeing you [Day] at [Time]. Text me if anything changes."`,
+    },
+    {
+      id:"lsa_setup",icon:"🔍",title:"Google LSA Setup Guide",tag:"Marketing",
+      preview:"Step-by-step: get your Local Services Ads live using your Streamline intake URL.",
+      content:`GOOGLE LOCAL SERVICES ADS — SETUP GUIDE
+─────────────────────────────────────────
+Your Streamline intake URL: ${intakeUrl}
+
+STEP 1: CREATE YOUR LSA ACCOUNT
+1. Go to ads.google.com/local-services-ads
+2. Select your business category (HVAC, Roofing, etc.)
+3. Enter your service area (Columbus, OH metro)
+4. Complete the background check + license verification
+
+STEP 2: SET YOUR BUDGET
+• Start with $20–40/day budget
+• LSAs charge per lead (call or message), not per click
+• Average cost per lead in Columbus: $15–35
+• You only pay for leads in your service category
+
+STEP 3: LINK YOUR INTAKE URL
+In your Google Business Profile (linked to LSA):
+• Add your Streamline intake URL as your website
+• This captures leads through your scoring system
+• URL: ${intakeUrl}
+
+STEP 4: OPTIMIZE YOUR PROFILE
+• Upload 5+ real job photos
+• Ask every customer for a Google review
+• Aim for 10+ reviews before running ads aggressively
+• Respond to every review (Google rewards this)
+
+STEP 5: KEYWORDS TO TARGET
+High-intent (bid aggressively):
+• "[service] repair near me"
+• "emergency [service] [city]"
+• "[service] replacement cost"
+• "best [service] contractor [city]"
+
+STEP 6: TRACK RESULTS
+• Mark every LSA lead as Won/Lost in Streamline
+• After 30 days, compare LSA close rate vs. Streamline close rate
+• Adjust budget to favor best-performing channel
+
+PRO TIP: Your Streamline intake URL pre-qualifies leads before they contact you. This means your LSA leads go through scoring automatically — you'll see their score in your dashboard within seconds.`,
+    },
+    {
+      id:"objection_handling",icon:"🛡️",title:"Objection Handling Playbook",tag:"Sales",
+      preview:"The 8 most common objections and exactly how to respond.",
+      content:`OBJECTION HANDLING PLAYBOOK
+────────────────────────────
+
+PRICE OBJECTIONS
+
+"That's more than I expected."
+→ "I understand — let me walk you through exactly what's included. A lot of our competitors quote low and add fees later. Our price covers [X, Y, Z] with no surprises. Would it help to see an itemized breakdown?"
+
+"I got a cheaper quote from [Competitor]."
+→ "That's worth exploring. A few questions: Did they give you a written quote? Are they licensed and insured? What's their warranty? Price differences usually come down to one of those three things."
+
+"I can't afford it right now."
+→ "That's fair. We do offer [payment plans / financing]. Would splitting it into monthly payments make this work for your budget?"
+
+TIMING OBJECTIONS
+
+"I'm not ready yet."
+→ "I completely understand. Just so you know, [issue] tends to get more expensive over time — what starts as a $X repair can become a $X replacement if it fails completely. I'm not trying to pressure you, but what would need to happen for you to feel ready?"
+
+"I need to talk to my spouse."
+→ "Of course — that's totally normal. Would it be helpful if I put together a written summary you can share with them? I can also make myself available for a call with both of you."
+
+TRUST OBJECTIONS
+
+"I've had bad experiences with contractors."
+→ "I'm sorry to hear that — it happens more than it should in our industry. Here's what's different about us: [specific proof: reviews, BBB rating, license number, guarantee]. I'd also encourage you to check our Google reviews before committing to anything."
+
+"You're not the cheapest option."
+→ "You're right, and I'm not going to pretend otherwise. What we offer is [quality/warranty/response time/guarantee]. For most homeowners, the right question isn't 'cheapest' — it's 'who will I trust in my home and who will stand behind their work.'"
+
+"Do you have references?"
+→ "Absolutely — I'll text you three customer contacts right now. I'd also point you to our Google reviews. Happy to wait while you check."`,
+    },
+    {
+      id:"seasonal_calendar",icon:"📅",title:"Seasonal Marketing Calendar",tag:"Strategy",
+      preview:"When to run ads, what to promote, and how to prep for each season.",
+      content:`SEASONAL MARKETING CALENDAR — ${user.industry?.toUpperCase()||"YOUR INDUSTRY"}
+─────────────────────────────────────────
+
+JANUARY–FEBRUARY (Winter)
+Focus: Emergency response + heating
+• Run urgency ads: "Furnace out? Same-day service"
+• Target homeowners with older systems (10+ years)
+• Offer free heating safety inspections as lead-gen
+• Best converting headline: "Don't freeze — [Company] is 1 call away"
+
+MARCH–APRIL (Early Spring)
+Focus: Pre-season prep
+• Push tune-up campaigns before heat arrives
+• "Schedule your AC checkup before the rush"
+• Google LSA budget: increase 20% in late March
+• Follow up with last year's customers for annual service
+
+MAY–JUNE (Late Spring / Early Summer)
+Focus: Replacement season
+• Best time for big-ticket installs (AC, roof, panel upgrade)
+• Leads are highest intent + highest budget
+• Run "limited availability" messaging — it's true, you're busy
+• Ask every happy customer for a Google review this month
+
+JULY–AUGUST (Peak Summer)
+Focus: Emergency work
+• Highest volume, fastest close rates
+• Emergency response time is your #1 selling point
+• Keep capacity for same-day/next-day calls
+• Consider a small premium for emergency calls
+
+SEPTEMBER–OCTOBER (Fall)
+Focus: End-of-season + prep
+• "Last chance to fix it before winter" messaging
+• Gutter cleaning, roof inspection, furnace prep
+• Offer end-of-season discounts to fill gaps in schedule
+• Re-engage leads that went cold in summer
+
+NOVEMBER–DECEMBER (Holiday)
+Focus: Pre-winter + indoor projects
+• "Get it done before the holidays" messaging
+• Homeowners motivated before guests arrive
+• Electricians: holiday lighting circuits, generator installs
+• Slowest period — use to follow up on outstanding quotes
+
+YEAR-ROUND TACTICS
+• Post one job photo per week on Google Business Profile
+• Respond to every Google review within 24 hours
+• Send a "how was your service?" text 3 days after every job
+• Ask for referrals at the moment of payment (highest response rate)`,
+    },
+    {
+      id:"pricing_guide",icon:"💲",title:"How to Price Jobs Confidently",tag:"Business",
+      preview:"A framework for quoting accurately and defending your price.",
+      content:`HOW TO PRICE JOBS CONFIDENTLY
+──────────────────────────────
+
+THE GOLDEN RULE
+Never quote before you diagnose. A number without context loses every price battle.
+
+STEP 1: UNDERSTAND THE FULL SCOPE
+Before you quote anything:
+• What exactly is broken or needed?
+• How old is the existing equipment/structure?
+• Any access issues? Permit required?
+• What's the customer's timeline?
+
+STEP 2: BUILD YOUR QUOTE WITH 4 COMPONENTS
+1. Labor (your time + expertise + overhead)
+2. Materials (parts, supplies, equipment)
+3. Overhead (fuel, insurance, admin, tools)
+4. Profit margin (15–25% is industry standard)
+
+Most contractors undercharge because they forget overhead and margin.
+
+STEP 3: PRESENT YOUR PRICE WITH CONTEXT
+Don't just say the number. Say:
+"Based on what I'm seeing, this job involves [X]. That includes [labor description], [parts], and a [warranty]. My price is $[X]."
+
+STEP 4: ANCHOR HIGH, THEN JUSTIFY
+Present the full-scope option first, then the budget option if needed. Customers make decisions relative to the first number they hear.
+
+STEP 5: KNOW YOUR WALK-AWAY NUMBER
+Before every estimate, decide:
+• What's my minimum to do this profitably?
+• Below that number, politely decline.
+• A bad job at a bad price is worse than no job.
+
+STEP 6: CLOSE THE ESTIMATE
+After presenting price, go silent. The next person who speaks loses. Wait for them to respond before filling the silence.
+
+If they say yes: confirm in writing, collect deposit, schedule.
+If they say "let me think": ask what specific concern they have.
+If they say no: ask if price or another factor is the issue.`,
+    },
+    {
+      id:"review_script",icon:"⭐",title:"How to Ask for Google Reviews",tag:"Marketing",
+      preview:"A simple system to consistently collect 5-star reviews.",
+      content:`HOW TO ASK FOR GOOGLE REVIEWS
+──────────────────────────────
+
+WHY THIS MATTERS
+• Every 10 reviews = ~12% increase in call volume (industry study)
+• Google LSA rank is heavily weighted by reviews
+• Leads see your reviews before they call you
+• Your Streamline score and Google reviews compound trust
+
+WHEN TO ASK
+The best moment: right when the customer pays and is happiest.
+Second best: 3 days after the job via text.
+Never: in the middle of the job, or if there was a problem.
+
+THE ASK (in person)
+"[Name], I'm really glad we could take care of this for you today. If you're happy with the work, the biggest thing you can do for my business is leave us a Google review — it takes about 60 seconds and really makes a difference. I'll text you the link right now."
+
+THE TEXT (send immediately after)
+"Hi [Name], it's [Your Name] from [Company]. Thanks for choosing us! If you have 60 seconds, a Google review would mean a lot: [your Google review link]"
+
+To find your Google review link:
+1. Search your business name on Google
+2. Click "Ask for reviews"
+3. Copy the short link
+
+FOLLOW-UP (if no review after 5 days)
+"Hi [Name], just following up on the review link I sent — no pressure at all, but if you have a moment it would really help us out. Thanks!"
+
+HOW TO RESPOND TO REVIEWS
+• 5-star: "Thank you [Name]! We loved working with you — call us anytime."
+• 4-star: "Thanks for the kind words! If there's anything we could have done better, please let us know."
+• 1–3 star: "We're sorry to hear this, [Name]. Please call us at [number] so we can make it right."
+
+GOAL: 2 new reviews per month minimum.`,
+    },
+  ];
+
+  return(
+    <div style={{animation:"fadeIn 0.3s ease"}}>
+      <div style={{marginBottom:24}}>
+        <h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:"clamp(20px,3vw,26px)",letterSpacing:-0.8,marginBottom:5}}>Resources</h2>
+        <p style={{color:T.muted,fontSize:13}}>Scripts, guides, and playbooks to help you close more jobs.</p>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:20}} className="grid-1-mobile">
+        {RESOURCES.map(r=>(
+          <div key={r.id} onClick={()=>setOpen(r.id)} style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:12,padding:"18px 20px",cursor:"pointer",transition:"all 0.2s"}} onMouseEnter={e=>{e.currentTarget.style.background=T.surface2;e.currentTarget.style.borderColor=T.blue+"60";}} onMouseLeave={e=>{e.currentTarget.style.background=T.surface;e.currentTarget.style.borderColor=T.border2;}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+              <div style={{width:38,height:38,borderRadius:9,background:"rgba(37,99,235,0.12)",border:"1px solid rgba(37,99,235,0.2)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>{r.icon}</div>
+              <div>
+                <div style={{fontSize:13,fontWeight:600,color:T.white,lineHeight:1.3}}>{r.title}</div>
+                <div style={{fontSize:10,color:T.blueL,fontWeight:600,marginTop:2}}>{r.tag}</div>
+              </div>
+            </div>
+            <div style={{fontSize:12,color:T.muted,lineHeight:1.6,marginBottom:10}}>{r.preview}</div>
+            <div style={{fontSize:11,color:T.blueL,fontWeight:600}}>Read guide →</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{background:"rgba(16,185,129,0.06)",border:"1px solid rgba(16,185,129,0.2)",borderRadius:12,padding:"14px 18px",fontSize:13,color:T.offWhite,lineHeight:1.7}}>
+        💡 <strong style={{color:T.green}}>Quick wins:</strong> The follow-up call script + asking for Google reviews are the two highest-ROI things you can implement this week. Most contractors skip both.
+      </div>
+
+      {/* Resource viewer modal */}
+      {RESOURCES.filter(r=>r.id===open).map(r=>(
+        <Modal key={r.id} open={true} onClose={()=>setOpen(null)} title={r.title} width={680}>
+          <div>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}>
+              <span style={{fontSize:11,background:"rgba(37,99,235,0.15)",color:T.blueL,border:"1px solid rgba(37,99,235,0.3)",borderRadius:4,padding:"2px 8px",fontWeight:600}}>{r.tag}</span>
+            </div>
+            <pre style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:T.offWhite,lineHeight:1.8,background:T.surface2,border:`1px solid ${T.border}`,borderRadius:10,padding:18,overflowX:"auto",whiteSpace:"pre-wrap",margin:0}}>{r.content}</pre>
+            <div style={{marginTop:14,display:"flex",gap:8}}>
+              <button onClick={()=>{navigator.clipboard.writeText(r.content);}} style={{background:T.surface2,border:`1px solid ${T.border2}`,borderRadius:8,padding:"8px 14px",cursor:"pointer",color:T.offWhite,fontSize:12,fontWeight:500}}>📋 Copy to clipboard</button>
+              <Btn variant="outline" onClick={()=>setOpen(null)} style={{marginLeft:"auto"}}>Close</Btn>
+            </div>
+          </div>
+        </Modal>
+      ))}
+    </div>
+  );
+}
+
+// ─── A. ADMIN TRUST SCORES ────────────────────────────────────────────────────
+function AdminTrustScores({contractors,toast}){
+  const [allLeads,setAllLeads]=useState([]);
+  const [loading,setLoading]=useState(true);
+
+  useEffect(()=>{
+    db.getAllWonLeads().then(won=>{
+      // Also grab all leads to calculate lost rates
+      Promise.all(contractors.map(c=>db.getLeads(c.id).catch(()=>[]))).then(results=>{
+        const flat=results.flat();
+        setAllLeads(flat);
+        setLoading(false);
+      });
+    }).catch(()=>setLoading(false));
+  },[contractors.length]);
+
+  const scored=contractors.map(c=>{
+    const cLeads=allLeads.filter(l=>l.business_id===c.id);
+    const total=cLeads.length;
+    const won=cLeads.filter(l=>l.status==="won").length;
+    const lost=cLeads.filter(l=>l.status==="lost").length;
+    const closeRate=total>0?Math.round((won/total)*100):null;
+    const lostRate=total>0?Math.round((lost/total)*100):null;
+    // Suspicious: high score leads (75+) lost quickly (<48h)
+    const highScoreLeads=cLeads.filter(l=>l.score>=75);
+    const suspiciousLosses=cLeads.filter(l=>{
+      if(l.status!=="lost"||l.score<75)return false;
+      const created=new Date(l.created_at);
+      const updated=new Date(l.updated_at||l.created_at);
+      return (updated-created)<48*60*60*1000;
+    }).length;
+    // Trust tier
+    let tier="trusted",tierColor=T.green,tierIcon="🟢";
+    if(suspiciousLosses>=3||(closeRate!==null&&closeRate<5&&total>=10)){tier="review";tierColor=T.red;tierIcon="🔴";}
+    else if(suspiciousLosses>=1||(closeRate!==null&&closeRate<10&&total>=5)){tier="watch";tierColor=T.amber;tierIcon="🟡";}
+    return{...c,total,won,lost,closeRate,lostRate,suspiciousLosses,tier,tierColor,tierIcon};
+  }).sort((a,b)=>b.suspiciousLosses-a.suspiciousLosses||(a.closeRate||100)-(b.closeRate||100));
+
+  const platformCloseRate=allLeads.length>0?Math.round((allLeads.filter(l=>l.status==="won").length/allLeads.length)*100):0;
+
+  return(
+    <div style={{animation:"fadeIn 0.3s ease"}}>
+      <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:12}}>
+        <div>
+          <h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:26,letterSpacing:-1,marginBottom:3}}>Contractor Trust Scores</h2>
+          <p style={{color:T.muted,fontSize:13}}>Platform close rate: <strong style={{color:T.white}}>{platformCloseRate}%</strong> · Flags suspicious loss patterns on high-score leads</p>
+        </div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:20}}>
+        {[
+          {label:"🟢 Trusted",value:scored.filter(c=>c.tier==="trusted").length,color:T.green},
+          {label:"🟡 Watch",value:scored.filter(c=>c.tier==="watch").length,color:T.amber},
+          {label:"🔴 Review",value:scored.filter(c=>c.tier==="review").length,color:T.red},
+        ].map(s=>(
+          <div key={s.label} style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"center",gap:12}}>
+            <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:28,fontWeight:700,color:s.color}}>{s.value}</div>
+            <div style={{fontSize:13,color:T.offWhite}}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {loading?(
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:200,gap:12}}><Spinner/><span style={{color:T.muted}}>Analyzing contractor patterns…</span></div>
+      ):(
+        <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:14,overflow:"hidden"}}>
+          <div style={{display:"grid",gridTemplateColumns:"2fr 80px 1fr 1fr 1fr 1fr 120px",padding:"10px 16px",borderBottom:`1px solid ${T.border}`,fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.07em"}}>
+            {["Contractor","Trust","Leads","Close Rate","Lost Rate","⚠ Suspicious","vs. Platform"].map(h=><div key={h}>{h}</div>)}
+          </div>
+          {scored.map((c,i)=>{
+            const diff=c.closeRate!==null?c.closeRate-platformCloseRate:null;
+            return(
+              <div key={c.id} style={{display:"grid",gridTemplateColumns:"2fr 80px 1fr 1fr 1fr 1fr 120px",padding:"13px 16px",borderBottom:i<scored.length-1?`1px solid ${T.border}`:"none",alignItems:"center",background:c.tier==="review"?"rgba(239,68,68,0.03)":c.tier==="watch"?"rgba(245,158,11,0.03)":"none"}}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:600}}>{c.company||c.email}</div>
+                  <div style={{fontSize:11,color:T.muted}}>{c.industry} · {c.city}</div>
+                </div>
+                <div><span style={{fontSize:18}}>{c.tierIcon}</span></div>
+                <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:13,color:T.muted}}>{c.total}</div>
+                <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:13,color:c.closeRate!==null?(c.closeRate>=20?T.green:c.closeRate>=10?T.amber:T.red):T.muted}}>{c.closeRate!==null?`${c.closeRate}%`:"—"}</div>
+                <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:13,color:T.muted}}>{c.lostRate!==null?`${c.lostRate}%`:"—"}</div>
+                <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:13,color:c.suspiciousLosses>0?T.red:T.muted,fontWeight:c.suspiciousLosses>0?700:400}}>{c.suspiciousLosses>0?`${c.suspiciousLosses} flagged`:"—"}</div>
+                <div style={{fontSize:11,fontWeight:600,color:diff===null?T.muted:diff>=0?T.green:T.red}}>{diff===null?"—":diff>=0?`+${diff}% above avg`:`${diff}% below avg`}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div style={{marginTop:12,fontSize:12,color:T.muted,lineHeight:1.7}}>
+        ⚠️ "Suspicious" = leads scored 75+ that were marked Lost within 48 hours. Watch tier: 1+ flags or close rate &lt;10% with 5+ leads. Review tier: 3+ flags or close rate &lt;5% with 10+ leads.
+      </div>
+    </div>
+  );
+}
+
+// ─── C. ADMIN FOLLOW-UP QUEUE ─────────────────────────────────────────────────
+function AdminFollowUpQueue({contractors,toast}){
+  const [staleLeads,setStaleLeads]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [emailDraft,setEmailDraft]=useState(null);
+
+  useEffect(()=>{
+    const cutoff=new Date(Date.now()-14*24*60*60*1000);
+    Promise.all(contractors.map(c=>db.getLeads(c.id).catch(()=>[]))).then(results=>{
+      const flat=results.flat();
+      const stale=flat.filter(l=>{
+        if(l.status==="won"||l.status==="new")return false;
+        const created=new Date(l.created_at);
+        return created<cutoff&&(l.status==="contacted"||l.status==="lost");
+      }).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+      setStaleLeads(stale);
+      setLoading(false);
+    });
+  },[contractors.length]);
+
+  const buildEmail=(lead)=>{
+    const c=contractors.find(x=>x.id===lead.business_id);
+    const subject=`Quick question about your ${lead.is_name||lead.issue_type} service`;
+    const body=`Hi ${lead.name},
+
+I wanted to follow up quickly — you recently submitted a request for ${(lead.is_name||lead.issue_type||"home service").toLowerCase()} help through Streamline.
+
+Did ${c?.company||"our contractor"} take care of you? We'd love to hear how it went — good or bad. Your feedback helps us ensure we're connecting homeowners with the right professionals.
+
+If you haven't been contacted yet, please reply to this email and we'll get it sorted right away.
+
+Thank you,
+The Streamline Team
+hello@streamline.io`;
+    setEmailDraft({lead,subject,body,to:lead.email});
+  };
+
+  const copyEmail=()=>{
+    if(!emailDraft)return;
+    navigator.clipboard.writeText(`To: ${emailDraft.to}\nSubject: ${emailDraft.subject}\n\n${emailDraft.body}`);
+    toast({message:"Email copied to clipboard",type:"success"});
+  };
+
+  return(
+    <div style={{animation:"fadeIn 0.3s ease"}}>
+      <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:12}}>
+        <div>
+          <h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:26,letterSpacing:-1,marginBottom:3}}>Follow-Up Queue</h2>
+          <p style={{color:T.muted,fontSize:13}}>Leads 14+ days old still in "contacted" or "lost" — verify job outcomes directly with homeowners</p>
+        </div>
+      </div>
+
+      {loading?(
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:200,gap:12}}><Spinner/><span style={{color:T.muted}}>Scanning leads…</span></div>
+      ):staleLeads.length===0?(
+        <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:14,padding:56,textAlign:"center"}}>
+          <div style={{fontSize:32,marginBottom:12}}>✅</div>
+          <div style={{fontSize:15,color:T.offWhite,marginBottom:6}}>Queue is clear</div>
+          <div style={{fontSize:13,color:T.muted}}>No leads older than 14 days in contacted/lost status.</div>
+        </div>
+      ):(
+        <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:14,overflow:"hidden"}}>
+          <div style={{display:"grid",gridTemplateColumns:"1.8fr 1.2fr 1fr 1fr 1fr 80px 140px",padding:"10px 16px",borderBottom:`1px solid ${T.border}`,fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.07em"}}>
+            {["Homeowner","Contractor","Service","Score","Last Status","Days","Action"].map(h=><div key={h}>{h}</div>)}
+          </div>
+          {staleLeads.map((l,i)=>{
+            const c=contractors.find(x=>x.id===l.business_id);
+            const daysAgo=Math.floor((Date.now()-new Date(l.created_at))/(24*60*60*1000));
+            return(
+              <div key={l.id} style={{display:"grid",gridTemplateColumns:"1.8fr 1.2fr 1fr 1fr 1fr 80px 140px",padding:"12px 16px",borderBottom:i<staleLeads.length-1?`1px solid ${T.border}`:"none",alignItems:"center",fontSize:12}}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:600,color:T.white}}>{l.name}</div>
+                  <div style={{fontSize:11,color:T.muted}}>{l.email}</div>
+                </div>
+                <div style={{color:T.offWhite}}>{c?.company||"—"}</div>
+                <div style={{color:T.muted}}>{l.is_name||l.issue_type}</div>
+                <div style={{fontFamily:"'JetBrains Mono',monospace",color:l.score>=75?T.green:l.score>=50?T.amber:T.muted}}>{l.score}</div>
+                <div><Pill color={l.status}>{l.status}</Pill></div>
+                <div style={{fontFamily:"'JetBrains Mono',monospace",color:daysAgo>30?T.red:T.amber}}>{daysAgo}d</div>
+                <div style={{display:"flex",gap:5}}>
+                  <button onClick={()=>buildEmail(l)} style={{background:"rgba(37,99,235,0.12)",border:"1px solid rgba(37,99,235,0.3)",borderRadius:7,padding:"5px 10px",cursor:"pointer",color:T.blueL,fontSize:11,fontWeight:600}}>✉ Draft</button>
+                  {l.phone&&<a href={`tel:${l.phone}`} style={{background:"rgba(16,185,129,0.1)",border:"1px solid rgba(16,185,129,0.25)",borderRadius:7,padding:"5px 8px",color:T.green,fontSize:11,textDecoration:"none"}}>📞</a>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <Modal open={!!emailDraft} onClose={()=>setEmailDraft(null)} title="Follow-Up Email Draft" width={600}>
+        {emailDraft&&(
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{background:T.surface2,borderRadius:8,padding:"10px 12px"}}>
+              <div style={{fontSize:11,color:T.muted,marginBottom:2}}>To: <span style={{color:T.blueL}}>{emailDraft.to}</span></div>
+              <div style={{fontSize:11,color:T.muted}}>Subject: <span style={{color:T.offWhite}}>{emailDraft.subject}</span></div>
+            </div>
+            <textarea readOnly value={emailDraft.body} style={{width:"100%",background:T.surface2,border:`1px solid ${T.border2}`,borderRadius:8,padding:"12px",color:T.white,fontSize:13,outline:"none",minHeight:220,resize:"vertical",fontFamily:"inherit",lineHeight:1.7}}/>
+            <div style={{display:"flex",gap:8}}>
+              <Btn variant="outline" onClick={()=>setEmailDraft(null)} style={{flex:1}}>Close</Btn>
+              <Btn onClick={copyEmail} style={{flex:2}}>📋 Copy Email</Btn>
+            </div>
+            <div style={{fontSize:11,color:T.muted}}>Copy and paste into your email client. Send from hello@streamline.io for best deliverability.</div>
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+}
+
+// ─── E. ADMIN MONTH-END BILLING ───────────────────────────────────────────────
+function AdminMonthEndBilling({contractors,toast}){
+  const [wonLeads,setWonLeads]=useState([]);
+  const [invoices,setInvoices]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [generating,setGenerating]=useState(false);
+  const [runAll,setRunAll]=useState(false);
+  const [preview,setPreview]=useState(null);
+
+  const load=async()=>{
+    setLoading(true);
+    try{
+      const[wl,inv]=await Promise.all([db.getAllWonLeads(),db.getAllInvoices()]);
+      setWonLeads(wl);setInvoices(inv);
+    }catch(e){toast({message:"Failed to load",type:"error"});}
+    setLoading(false);
+  };
+  useEffect(()=>{load();},[]);
+
+  const now=new Date();
+  const period=now.toLocaleString("default",{month:"long",year:"numeric"});
+
+  const byContractor=contractors.map(c=>{
+    const perfFee=c.plan==="Growth"?100:150;
+    const unbilled=wonLeads.filter(l=>l.business_id===c.id&&!l.billed&&l.verified===true);
+    return{...c,unbilled,perfFee,fee:unbilled.length*perfFee};
+  }).filter(c=>c.unbilled.length>0).sort((a,b)=>b.fee-a.fee);
+
+  const totalFees=byContractor.reduce((s,c)=>s+c.fee,0);
+  const verifiedCount=wonLeads.filter(l=>l.verified===true&&!l.billed).length;
+  const pendingVerify=wonLeads.filter(l=>l.verified===null||l.verified===undefined).length;
+
+  const generateOne=async(c)=>{
+    setGenerating(true);
+    try{
+      const suffix=(c.company||"CONT").replace(/\s/g,"").substring(0,4).toUpperCase()+String(Math.floor(Math.random()*900)+100);
+      const invoiceNum=`INV-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}-${suffix}`;
+      const inv={business_id:c.id,invoice_number:invoiceNum,period,line_item_count:c.unbilled.length,perf_fee_per_job:c.perfFee,total_amount:c.fee,status:"sent",created_at:now.toISOString(),lead_ids:c.unbilled.map(l=>l.id).join(",")};
+      const saved=await db.createInvoice(inv);
+      await db.markLeadsBilled(c.unbilled.map(l=>l.id),saved.id);
+      toast({message:`Invoice ${invoiceNum} created for ${c.company||c.email}`,type:"success"});
+      await load();
+    }catch(e){toast({message:"Failed: "+e.message,type:"error"});}
+    setGenerating(false);
+  };
+
+  const generateAll=async()=>{
+    setRunAll(true);setGenerating(true);
+    for(const c of byContractor){
+      try{
+        const suffix=(c.company||"CONT").replace(/\s/g,"").substring(0,4).toUpperCase()+String(Math.floor(Math.random()*900)+100);
+        const invoiceNum=`INV-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}-${suffix}`;
+        const inv={business_id:c.id,invoice_number:invoiceNum,period,line_item_count:c.unbilled.length,perf_fee_per_job:c.perfFee,total_amount:c.fee,status:"sent",created_at:now.toISOString(),lead_ids:c.unbilled.map(l=>l.id).join(",")};
+        const saved=await db.createInvoice(inv);
+        await db.markLeadsBilled(c.unbilled.map(l=>l.id),saved.id);
+      }catch(e){console.error(e);}
+    }
+    toast({message:`${byContractor.length} invoice${byContractor.length!==1?"s":""} generated for ${period}`,type:"success"});
+    await load();
+    setGenerating(false);setRunAll(false);
+  };
+
+  return(
+    <div style={{animation:"fadeIn 0.3s ease"}}>
+      <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:12}}>
+        <div>
+          <h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:26,letterSpacing:-1,marginBottom:3}}>Month-End Billing</h2>
+          <p style={{color:T.muted,fontSize:13}}>{period} · Only invoices verified won jobs</p>
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <Btn variant="outline" onClick={load}>Refresh</Btn>
+          {byContractor.length>0&&<Btn onClick={generateAll} disabled={generating||pendingVerify>0} style={{background:`linear-gradient(135deg,${T.blue},#7C3AED)`,border:"none"}}>
+            {generating&&runAll?<span style={{display:"flex",alignItems:"center",gap:6}}><Spinner size={13}/>Generating…</span>:`🧾 Run All — ${byContractor.length} invoices`}
+          </Btn>}
+        </div>
+      </div>
+
+      {/* Summary bar */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:20}}>
+        {[
+          {label:"Ready to Invoice",value:byContractor.length,color:T.blueL,icon:"✅"},
+          {label:"Verified Jobs",value:verifiedCount,color:T.green,icon:"✓"},
+          {label:"Pending Verification",value:pendingVerify,color:pendingVerify>0?T.amber:T.muted,icon:"⏳"},
+          {label:"Total Fees",value:`$${totalFees.toLocaleString()}`,color:T.amber,icon:"💰"},
+        ].map(s=>(
+          <div key={s.label} style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:12,padding:"14px 16px"}}>
+            <div style={{fontSize:18,marginBottom:6}}>{s.icon}</div>
+            <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:22,fontWeight:700,color:s.color,lineHeight:1,marginBottom:3}}>{s.value}</div>
+            <div style={{fontSize:11,color:T.muted}}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {pendingVerify>0&&(
+        <div style={{background:"rgba(245,158,11,0.08)",border:"1px solid rgba(245,158,11,0.25)",borderRadius:10,padding:"12px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:18}}>⚠️</span>
+          <div>
+            <div style={{fontSize:13,fontWeight:600,color:T.amber,marginBottom:2}}>{pendingVerify} job{pendingVerify!==1?"s":""} still pending verification</div>
+            <div style={{fontSize:12,color:T.muted}}>Go to the Invoices tab to verify these before running billing. Only verified jobs are included in invoices.</div>
+          </div>
+        </div>
+      )}
+
+      {loading?(
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:200,gap:12}}><Spinner/><span style={{color:T.muted}}>Loading…</span></div>
+      ):byContractor.length===0?(
+        <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:14,padding:56,textAlign:"center"}}>
+          <div style={{fontSize:32,marginBottom:12}}>🎉</div>
+          <div style={{fontSize:15,color:T.offWhite,marginBottom:6}}>All billing up to date</div>
+          <div style={{fontSize:13,color:T.muted}}>No verified unbilled jobs found.</div>
+        </div>
+      ):(
+        <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:14,overflow:"hidden"}}>
+          <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 140px",padding:"10px 16px",borderBottom:`1px solid ${T.border}`,fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.07em"}}>
+            {["Contractor","Plan","Verified Jobs","Fee/Job","Total Due",""].map(h=><div key={h}>{h}</div>)}
+          </div>
+          {byContractor.map((c,i)=>(
+            <div key={c.id} style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 140px",padding:"13px 16px",borderBottom:i<byContractor.length-1?`1px solid ${T.border}`:"none",alignItems:"center"}}>
+              <div>
+                <div style={{fontSize:13,fontWeight:600}}>{c.company||c.email}</div>
+                <div style={{fontSize:11,color:T.muted}}>{c.city}</div>
+              </div>
+              <div><Pill color={c.plan==="Growth"?"won":"new"}>{c.plan||"Starter"}</Pill></div>
+              <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:13,color:T.green}}>{c.unbilled.length}</div>
+              <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:T.muted}}>${c.perfFee}</div>
+              <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:14,fontWeight:700,color:T.amber}}>${c.fee.toLocaleString()}</div>
+              <div style={{display:"flex",gap:6}}>
+                <button onClick={()=>setPreview(c)} style={{background:"none",border:`1px solid ${T.border2}`,borderRadius:7,padding:"6px 10px",cursor:"pointer",color:T.muted,fontSize:12}}>Preview</button>
+                <button onClick={()=>generateOne(c)} disabled={generating} style={{background:`linear-gradient(135deg,${T.blue},#7C3AED)`,border:"none",borderRadius:7,padding:"6px 12px",cursor:"pointer",color:"white",fontSize:12,fontWeight:600,opacity:generating?0.6:1}}>
+                  {generating&&!runAll?<Spinner size={11}/>:"Invoice"}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Preview modal */}
+      <Modal open={!!preview} onClose={()=>setPreview(null)} title={`Invoice Preview — ${preview?.company||preview?.email}`} width={580}>
+        {preview&&(
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{background:T.surface2,borderRadius:10,padding:16}}>
+              {preview.unbilled.map((l,i)=>(
+                <div key={l.id} style={{display:"flex",justifyContent:"space-between",padding:"9px 0",borderBottom:i<preview.unbilled.length-1?`1px solid ${T.border}`:"none",fontSize:13}}>
+                  <div>
+                    <div style={{fontWeight:500,color:T.white}}>{l.name}</div>
+                    <div style={{fontSize:11,color:T.muted}}>{l.is_name||l.issue_type} · {l.completed_at?new Date(l.completed_at).toLocaleDateString():"—"}</div>
+                  </div>
+                  <div style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:T.amber}}>${preview.perfFee}</div>
+                </div>
+              ))}
+              <div style={{display:"flex",justifyContent:"space-between",padding:"12px 0 0",fontSize:14,fontWeight:700}}>
+                <span style={{color:T.white}}>Total</span>
+                <span style={{fontFamily:"'JetBrains Mono',monospace",color:T.amber}}>${preview.fee.toLocaleString()}</span>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <Btn variant="outline" onClick={()=>setPreview(null)} style={{flex:1}}>Close</Btn>
+              <Btn onClick={()=>{generateOne(preview);setPreview(null);}} style={{flex:2}}>Generate Invoice</Btn>
+            </div>
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+}
+
+// ─── I. ADMIN TEST SUITE ──────────────────────────────────────────────────────
+function AdminTestSuite({contractors,toast}){
+  const [results,setResults]=useState([]);
+  const [running,setRunning]=useState(false);
+  const [step,setStep]=useState(null);
+
+  const INDUSTRIES_TEST=["hvac","roofing","plumbing","electrical"];
+
+  const log=(name,status,detail="")=>{
+    setResults(r=>[...r,{name,status,detail,ts:new Date().toLocaleTimeString()}]);
+  };
+
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+  const runTests=async()=>{
+    setResults([]);setRunning(true);
+
+    // ── Test 1: DB connection ──
+    setStep("Checking database connection…");
+    try{
+      const s=await db.getSession();
+      log("Database connection","pass","Supabase client connected");
+    }catch(e){log("Database connection","fail",e.message);}
+    await sleep(400);
+
+    // ── Test 2: Contractor load ──
+    setStep("Loading contractor list…");
+    try{
+      if(contractors.length===0){log("Contractor records","warn","No contractors in database yet");}
+      else{log("Contractor records","pass",`${contractors.length} contractor${contractors.length!==1?"s":""} loaded`);}
+    }catch(e){log("Contractor records","fail",e.message);}
+    await sleep(400);
+
+    // ── Test 3: Lead insertion for each industry ──
+    for(const ind of INDUSTRIES_TEST){
+      setStep(`Submitting test lead: ${ind}…`);
+      const testLead={
+        business_id:DEMO_BUSINESS_ID,
+        name:`Test User ${ind.toUpperCase()}`,
+        phone:"6145550199",
+        email:`test-${ind}@streamline-test.com`,
+        issue_type:"test_lead",
+        issue_description:`Automated test submission for ${ind}`,
+        urgency:"this_week",
+        budget:"under_1000",
+        ownership:"owner",
+        property_size:"under_1500",
+        preferred_time:"Anytime",
+        zip_code:"43215",
+        industry:ind.charAt(0).toUpperCase()+ind.slice(1),
+        score:72,
+        tier:"warm",
+        breakdown:{budget:12,urgency:15,ownership:15,size:10,clarity:10,contact:10},
+        status:"new",
+        estimate_range:"$400–1,200",
+        is_name:"Test Lead",
+        is_test:true,
+      };
+      try{
+        const inserted=await db.insertLead(testLead);
+        log(`Lead insertion: ${ind}`,"pass",`Lead ID: ${inserted.id.slice(0,8)}…`);
+        await sleep(300);
+
+        // ── Test 4: Status update ──
+        setStep(`Testing status update: ${ind}…`);
+        await db.updateLeadStatus(inserted.id,"contacted",{});
+        log(`Status update: ${ind}`,"pass","contacted ✓");
+        await sleep(200);
+
+        // ── Test 5: Won + job value ──
+        await db.updateLeadStatus(inserted.id,"won",{job_value:1500,completed_at:new Date().toISOString().split("T")[0],won_notes:"TEST",billed:false,verified:null});
+        log(`Won status + job value: ${ind}`,"pass","won, $1,500 ✓");
+        await sleep(200);
+
+        // ── Cleanup: mark as lost so it doesn't clog invoicing ──
+        await db.updateLeadStatus(inserted.id,"lost",{});
+        log(`Cleanup: ${ind}`,"pass","test lead reset to lost");
+
+      }catch(e){log(`Lead flow: ${ind}`,"fail",e.message);}
+      await sleep(300);
+    }
+
+    // ── Test 6: Routing engine ──
+    setStep("Testing lead routing engine…");
+    try{
+      const route=await db.routeLead("HVAC",null);
+      log("Lead routing engine","pass",route.bid?`Routed to ${route.bid.slice(0,8)}… (${route.reason})`:"No contractor available (OK if no contractors)");
+    }catch(e){log("Lead routing engine","fail",e.message);}
+    await sleep(400);
+
+    // ── Test 7: Billing table ──
+    setStep("Checking billing records…");
+    try{
+      const billing=await db.getAllBilling();
+      log("Billing table","pass",`${billing.length} billing record${billing.length!==1?"s":""} found`);
+    }catch(e){log("Billing table","fail",e.message);}
+    await sleep(300);
+
+    // ── Test 8: Invoice table ──
+    setStep("Checking invoice records…");
+    try{
+      const invoices=await db.getAllInvoices();
+      log("Invoice table","pass",`${invoices.length} invoice${invoices.length!==1?"s":""} found`);
+    }catch(e){log("Invoice table","fail",e.message);}
+    await sleep(300);
+
+    // ── Test 9: Notifications table ──
+    setStep("Checking notifications…");
+    try{
+      if(contractors.length>0){
+        const notifs=await db.getNotifications(contractors[0].id);
+        log("Notifications table","pass",`${notifs.length} notification${notifs.length!==1?"s":""} for first contractor`);
+      }else{log("Notifications table","warn","No contractors to test with");}
+    }catch(e){log("Notifications table","fail",e.message);}
+
+    setStep(null);setRunning(false);
+    const fails=results.filter(r=>r.status==="fail").length;
+    toast({message:fails===0?"✅ All tests passed!": `⚠️ ${fails} test(s) failed — check results`,type:fails===0?"success":"error"});
+  };
+
+  const statusColor={pass:T.green,fail:T.red,warn:T.amber};
+  const statusIcon={pass:"✓",fail:"✗",warn:"⚠"};
+
+  return(
+    <div style={{animation:"fadeIn 0.3s ease"}}>
+      <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:12}}>
+        <div>
+          <h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:26,letterSpacing:-1,marginBottom:3}}>Test Suite</h2>
+          <p style={{color:T.muted,fontSize:13}}>End-to-end automated tests — submits real leads, verifies routing, cleans up after itself</p>
+        </div>
+        <Btn onClick={runTests} disabled={running} style={{background:`linear-gradient(135deg,${T.blue},#7C3AED)`,border:"none",display:"flex",alignItems:"center",gap:8}}>
+          {running?<><Spinner size={13}/> Running…</>:"▶ Run All Tests"}
+        </Btn>
+      </div>
+
+      <div style={{background:"rgba(245,158,11,0.06)",border:"1px solid rgba(245,158,11,0.2)",borderRadius:10,padding:"12px 16px",marginBottom:20,fontSize:13,color:T.offWhite,lineHeight:1.6}}>
+        ⚠️ This test suite inserts real leads marked as <code style={{background:T.surface3,padding:"1px 5px",borderRadius:3,fontSize:11}}>is_test:true</code> into the demo contractor account, then immediately resets their status to "lost" so they don't appear in invoicing. Safe to run anytime.
+      </div>
+
+      {step&&(
+        <div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 16px",background:T.surface,border:`1px solid ${T.border2}`,borderRadius:10,marginBottom:14,fontSize:13,color:T.muted}}>
+          <Spinner size={14}/>{step}
+        </div>
+      )}
+
+      {results.length>0&&(
+        <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:14,overflow:"hidden",marginBottom:16}}>
+          <div style={{padding:"12px 16px",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontSize:13,fontWeight:600,color:T.white}}>{results.length} tests run</span>
+            <div style={{display:"flex",gap:12,fontSize:12}}>
+              <span style={{color:T.green}}>✓ {results.filter(r=>r.status==="pass").length} passed</span>
+              <span style={{color:T.amber}}>⚠ {results.filter(r=>r.status==="warn").length} warnings</span>
+              <span style={{color:T.red}}>✗ {results.filter(r=>r.status==="fail").length} failed</span>
+            </div>
+          </div>
+          {results.map((r,i)=>(
+            <div key={i} style={{display:"grid",gridTemplateColumns:"20px 2fr 3fr 80px",gap:12,padding:"10px 16px",borderBottom:i<results.length-1?`1px solid ${T.border}`:"none",alignItems:"center",background:r.status==="fail"?"rgba(239,68,68,0.03)":r.status==="warn"?"rgba(245,158,11,0.02)":"none"}}>
+              <span style={{fontSize:13,fontWeight:700,color:statusColor[r.status]}}>{statusIcon[r.status]}</span>
+              <span style={{fontSize:13,color:T.offWhite,fontWeight:500}}>{r.name}</span>
+              <span style={{fontSize:12,color:T.muted}}>{r.detail}</span>
+              <span style={{fontSize:10,color:T.muted,fontFamily:"'JetBrains Mono',monospace"}}>{r.ts}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {results.length===0&&!running&&(
+        <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:14,padding:56,textAlign:"center"}}>
+          <div style={{fontSize:40,marginBottom:14}}>🧪</div>
+          <div style={{fontSize:15,color:T.offWhite,marginBottom:8}}>Ready to test</div>
+          <div style={{fontSize:13,color:T.muted,maxWidth:400,margin:"0 auto"}}>Click "Run All Tests" to verify your database, lead insertion, routing engine, status updates, and billing tables are all working correctly.</div>
+        </div>
+      )}
     </div>
   );
 }
