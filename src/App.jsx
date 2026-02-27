@@ -154,6 +154,107 @@ const db={
   insertNotification:async(n)=>sb.from("notifications").insert([n]),
   markNotifsRead:async(bid)=>sb.from("notifications").update({read:true}).eq("business_id",bid).eq("read",false),
   subscribeToLeads:(bid,cb)=>sb.channel("leads-rt").on("postgres_changes",{event:"INSERT",schema:"public",table:"leads",filter:`business_id=eq.${bid}`},p=>cb(p.new)).subscribe(),
+  // ── Lead routing engine: cap enforcement + soft city balancing ──
+  // ── ROUTING ENGINE v3: cap + volume balance + quality balance + all-capped fallback ──
+  // SCORING (max 100 pts + home bonus):
+  //   capScore    (0-30): how much room left relative to cap
+  //   deficitScore(0-30): how far below city-avg volume
+  //   qualityScore(0-30): how far below city-avg lead quality (avg score 0-100)
+  //   homeBonus   (  20): if this contractor's URL sourced the lead
+  // All-capped fallback: same formula but cap filter removed, home bonus doubled
+  routeLead:async(industry, preferredBid=null)=>{
+    const PLAN_CAPS={"Starter":20,"Growth":50,"default":20};
+    const now=new Date();
+    const monthStart=new Date(now.getFullYear(),now.getMonth(),1).toISOString();
+    try{
+      const{data:contractors,error}=await sb.from("businesses")
+        .select("id,city,industry,company,plan")
+        .ilike("industry",`%${industry}%`)
+        .neq("id",DEMO_BUSINESS_ID);
+      if(error||!contractors?.length)return{bid:null,reason:"no_contractors"};
+
+      // For each contractor: count leads + avg lead score this month
+      const withStats=await Promise.all(contractors.map(async c=>{
+        const cap=PLAN_CAPS[c.plan]||PLAN_CAPS.default;
+        const{data:monthLeadsData}=await sb.from("leads")
+          .select("id,score")
+          .eq("business_id",c.id)
+          .gte("created_at",monthStart);
+        const monthLeads=(monthLeadsData||[]).length;
+        const avgQuality=monthLeads>0
+          ?Math.round(monthLeadsData.reduce((s,l)=>s+(l.score||0),0)/monthLeads)
+          :50; // neutral default so new contractors aren't penalised
+        const capRemaining=Math.max(0,cap-monthLeads);
+        return{...c,cap,monthLeads,capRemaining,avgQuality};
+      }));
+
+      const scoreContractors=(pool,ignoreCap=false)=>{
+        // City-level averages for volume AND quality
+        const cityGroups={};
+        pool.forEach(c=>{
+          const city=(c.city||"_").toLowerCase();
+          if(!cityGroups[city])cityGroups[city]=[];
+          cityGroups[city].push(c);
+        });
+        return pool.map(c=>{
+          const city=(c.city||"_").toLowerCase();
+          const peers=cityGroups[city]||[c];
+          const cityAvgVol =peers.reduce((s,p)=>s+p.monthLeads,0)/peers.length;
+          const cityAvgQual=peers.reduce((s,p)=>s+p.avgQuality,0)/peers.length;
+
+          // Volume deficit: behind the city average = higher priority
+          const volDeficit =Math.max(0,cityAvgVol -c.monthLeads);
+          // Quality deficit: lower avg quality than peers = gets better leads next
+          const qualDeficit=Math.max(0,cityAvgQual-c.avgQuality);
+
+          const capScore    =ignoreCap?15:(c.capRemaining/c.cap)*30; // 0-30
+          const deficitScore=Math.min(volDeficit *3,30);              // 0-30
+          const qualityScore=Math.min(qualDeficit*0.6,30);            // 0-30
+          const homeBonus   =c.id===preferredBid?(ignoreCap?40:20):0; // doubled when all capped
+          return{...c,routingScore:capScore+deficitScore+qualityScore+homeBonus};
+        });
+      };
+
+      // Primary: eligible contractors (under cap)
+      const eligible=withStats.filter(c=>c.capRemaining>0);
+      let pool=eligible;
+      let allCapped=false;
+
+      if(!eligible.length){
+        // All capped — fall back to full pool, home bonus doubled, same quality/volume rules
+        pool=withStats;
+        allCapped=true;
+      }
+
+      const scored=scoreContractors(pool,allCapped);
+      scored.sort((a,b)=>b.routingScore-a.routingScore);
+      const winner=scored[0];
+      const wasRedirected=preferredBid&&winner.id!==preferredBid;
+
+      return{
+        bid:winner.id,
+        reason:allCapped?"all_capped_overflow":wasRedirected?"overflow":"routed",
+        contractor:winner,
+        allCapped,
+      };
+    }catch(e){
+      console.error("Routing error:",e);
+      return{bid:null,reason:"error"};
+    }
+  },
+  getUnassignedLeads:async()=>{
+    const{data}=await sb.from("leads").select("*")
+      .eq("business_id",DEMO_BUSINESS_ID)
+      .eq("source","unassigned")
+      .order("created_at",{ascending:false});
+    return data||[];
+  },
+  assignLeadToContractor:async(leadId,contractorId)=>{
+    const{error}=await sb.from("leads")
+      .update({business_id:contractorId,source:"admin_assigned"})
+      .eq("id",leadId);
+    if(error)throw error;
+  },
 };
 
 function scoreLeadData(d){
@@ -501,19 +602,31 @@ function IntakeForm({industryKey="hvac",onBack}){
     setSubmitting(true);setError("");
     try{
       const{score,breakdown,tier}=scoreLeadData(form);
-      const bid=getBusinessIdFromURL();
-      // Fetch contractor's Calendly URL for qualified leads
-      if(score>=50){
-        try{const biz=await db.getBusiness(bid);setCalendlyUrl(biz?.calendly_url||"");}catch(e){}
+      const urlBid=getBusinessIdFromURL();
+      const hasBid=new URLSearchParams(window.location.search).has("bid");
+      // Run full routing: cap check + soft city balancing
+      // Pass urlBid as preferred if it came from a contractor link
+      const routing=await db.routeLead(ind.label, hasBid?urlBid:null);
+      let assignedBid=DEMO_BUSINESS_ID;
+      let assignedSource="unassigned";
+      if(routing.bid){
+        assignedBid=routing.bid;
+        if(routing.reason==="overflow") assignedSource="overflow";       // capped, sent to peer
+        else if(hasBid)                 assignedSource="direct";         // came from contractor URL
+        else                            assignedSource="auto_assigned";  // no URL, auto-matched
+      }
+      if(score>=50&&assignedSource!=="unassigned"){
+        try{const biz=await db.getBusiness(assignedBid);setCalendlyUrl(biz?.calendly_url||"");}catch(e){}
       }
       await db.insertLead({
-        business_id:bid,
+        business_id:assignedBid,
+        source:assignedSource,
         name:form.name,phone:form.phone,email:form.email,
         issue_type:form.issueType,issue_description:form.issueDescription,
         urgency:form.urgency,budget:form.budget,ownership:form.ownership,
         property_size:form.propertySize,preferred_time:form.preferredTime,
         zip_code:form.zipCode,industry:ind.label,score,tier,breakdown,status:"new",
-        estimate_range:ind.estimates[form.issueType]||"$400–$2,000",
+        estimate_range:ind.estimates[form.issueType]||"$400–2,000",
         is_name:form.issueType.replace(/_/g," ").replace(/\b\w/g,c=>c.toUpperCase()),
       });
       setDone(true);
@@ -1018,6 +1131,27 @@ function Dashboard({user,onLogout}){
             ))}
           </div>
 
+          {/* Monthly cap bar */}
+          {(()=>{
+            const now=new Date();
+            const monthStart=new Date(now.getFullYear(),now.getMonth(),1);
+            const monthLeads=leads.filter(l=>new Date(l.created_at)>=monthStart).length;
+            const cap=currentUser.plan==="Growth"?50:20;
+            const pct=Math.min(Math.round((monthLeads/cap)*100),100);
+            const overflowCount=leads.filter(l=>new Date(l.created_at)>=monthStart&&l.source==="overflow").length;
+            const c=pct>=90?T.red:pct>=70?T.amber:T.green;
+            return <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:12,padding:"12px 16px",marginBottom:14,display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+              <div style={{fontSize:11,color:T.muted,fontFamily:"'JetBrains Mono',monospace",textTransform:"uppercase",letterSpacing:"0.07em",flexShrink:0}}>Monthly Cap</div>
+              <div style={{flex:1,minWidth:120}}>
+                <div style={{height:6,background:T.border,borderRadius:3,overflow:"hidden"}}>
+                  <div style={{width:`${pct}%`,height:"100%",background:`linear-gradient(90deg,${T.blue},${c})`,borderRadius:3,transition:"width 0.6s ease"}}/>
+                </div>
+              </div>
+              <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:c,flexShrink:0}}>{monthLeads} / {cap}</div>
+              {pct>=90&&<span style={{fontSize:11,color:T.red,fontWeight:600}}>⚠ Near cap — overflow active</span>}
+              {overflowCount>0&&<span style={{fontSize:11,color:"#A78BFA"}}>↗ {overflowCount} overflow lead{overflowCount>1?"s":""} sent to peers this month</span>}
+            </div>;
+          })()}
           {/* Filters row */}
           <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
             <div style={{position:"relative",flex:1,minWidth:180}}>
@@ -1394,19 +1528,1033 @@ function LandingPage({onLogin,onIntakeForm}){
   </div>;
 }
 
+
+// ─── ADMIN CONSTANTS ──────────────────────────────────────────────────────────
+const ADMIN_EMAIL = "admin@streamline.io";
+
+const dbAdmin = {
+  getAllBusinesses: async () => {
+    // Uses service-level select — works because admin is authenticated
+    const { data, error } = await sb.from("businesses").select("*").order("created_at", { ascending: false });
+    if (error) throw error;
+    return data || [];
+  },
+  getLeadsForBusiness: async (bid) => {
+    const { data, error } = await sb.from("leads").select("*").eq("business_id", bid).order("created_at", { ascending: false });
+    if (error) throw error;
+    return data || [];
+  },
+  createContractor: async (profile) => {
+    // Sign up via auth, then upsert business profile
+    const { data, error } = await sb.auth.admin ? 
+      sb.auth.signUp({ email: profile.email, password: profile.tempPassword }) :
+      sb.auth.signUp({ email: profile.email, password: profile.tempPassword });
+    if (error) throw error;
+    return data;
+  },
+  upsertContractorProfile: async (profile) => {
+    const { data, error } = await sb.from("businesses").upsert(profile).select().single();
+    if (error) throw error;
+    return data;
+  },
+  deleteContractor: async (id) => {
+    const { error } = await sb.from("businesses").delete().eq("id", id);
+    if (error) throw error;
+  },
+};
+
+// ─── ADMIN AUTH PAGE ──────────────────────────────────────────────────────────
+function AdminLogin({ onAuth }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const submit = async () => {
+    setError(""); setLoading(true);
+    try {
+      const { session } = await db.signIn(email, password);
+      if (!session) throw new Error("Login failed.");
+      if (session.user.email !== ADMIN_EMAIL) {
+        await db.signOut();
+        throw new Error("Access denied. Admin credentials required.");
+      }
+      onAuth(session.user);
+    } catch (e) { setError(e.message || "Login failed."); }
+    setLoading(false);
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", background: T.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div style={{ width: "100%", maxWidth: 400 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 28, justifyContent: "center" }}>
+          <LogoMark size={34} />
+          <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 20 }}>Streamline</span>
+          <span style={{ background: "rgba(239,68,68,0.15)", color: "#F87171", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 4, padding: "2px 8px", fontSize: 10, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", letterSpacing: "0.07em" }}>ADMIN</span>
+        </div>
+        <Card style={{ padding: 28 }}>
+          <h2 style={{ fontFamily: "'DM Serif Display',serif", fontSize: 22, letterSpacing: -0.5, marginBottom: 5 }}>Admin Access</h2>
+          <p style={{ color: T.muted, fontSize: 13, marginBottom: 20 }}>Sign in with your admin credentials.</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <Inp label="Email" value={email} onChange={setEmail} type="email" placeholder="admin@streamline.io" required />
+            <Inp label="Password" value={password} onChange={setPassword} type="password" placeholder="••••••••" required />
+          </div>
+          {error && <div style={{ marginTop: 12, padding: "10px 14px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 10, fontSize: 13, color: "#F87171" }}>{error}</div>}
+          <Btn onClick={submit} disabled={loading} fullWidth style={{ marginTop: 18 }}>
+            {loading ? <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}><Spinner size={15} />Signing in…</span> : "Sign In →"}
+          </Btn>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// ─── CONTRACTOR MODAL ─────────────────────────────────────────────────────────
+function ContractorModal({ contractor, onClose, onSave, toast }) {
+  const isNew = !contractor?.id;
+  const [form, setForm] = useState({
+    company: contractor?.company || "",
+    email: contractor?.email || "",
+    tempPassword: "",
+    phone: contractor?.phone || "",
+    city: contractor?.city || "",
+    industry: contractor?.industry || "HVAC",
+    plan: contractor?.plan || "Starter",
+    calendly_url: contractor?.calendly_url || "",
+    notify_email: contractor?.notify_email || "",
+    notes: contractor?.notes || "",
+    id: contractor?.id || "",
+  });
+  const [saving, setSaving] = useState(false);
+  const set = k => v => setForm(f => ({ ...f, [k]: v }));
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      if (isNew) {
+        if (!form.email || !form.tempPassword) throw new Error("Email and temporary password are required.");
+        // Create auth user
+        const { data, error } = await sb.auth.signUp({ email: form.email, password: form.tempPassword });
+        if (error) throw error;
+        const uid = data.user?.id;
+        if (!uid) throw new Error("Failed to create user account.");
+        // Save business profile
+        await dbAdmin.upsertContractorProfile({
+          id: uid,
+          email: form.email,
+          company: form.company,
+          phone: form.phone,
+          city: form.city,
+          industry: form.industry,
+          plan: form.plan,
+          calendly_url: form.calendly_url,
+          notify_email: form.notify_email || form.email,
+          notes: form.notes,
+        });
+        toast({ message: `Contractor created: ${form.company}`, type: "success" });
+        onSave();
+      } else {
+        await dbAdmin.upsertContractorProfile({
+          id: form.id,
+          company: form.company,
+          phone: form.phone,
+          city: form.city,
+          industry: form.industry,
+          plan: form.plan,
+          calendly_url: form.calendly_url,
+          notify_email: form.notify_email,
+          notes: form.notes,
+        });
+        toast({ message: "Contractor updated", type: "success" });
+        onSave();
+      }
+      onClose();
+    } catch (e) {
+      toast({ message: e.message || "Save failed", type: "error" });
+    }
+    setSaving(false);
+  };
+
+  const industries = [
+    { value: "HVAC", label: "HVAC" },
+    { value: "Roofing", label: "Roofing" },
+    { value: "Plumbing", label: "Plumbing" },
+    { value: "Electrical", label: "Electrical" },
+  ];
+
+  return (
+    <Modal open={true} onClose={onClose} title={isNew ? "Add New Contractor" : `Edit: ${contractor.company}`} width={600}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <Inp label="Company Name" value={form.company} onChange={set("company")} placeholder="Apex Climate Control" required />
+          <Inp label="City / Market" value={form.city} onChange={set("city")} placeholder="Columbus, OH" />
+          <Inp label="Email" value={form.email} onChange={set("email")} type="email" placeholder="owner@company.com" required />
+          <Inp label="Phone" value={form.phone} onChange={set("phone")} type="tel" placeholder="(614) 555-0000" />
+          {isNew && <Inp label="Temp Password" value={form.tempPassword} onChange={set("tempPassword")} type="password" placeholder="They can change this" required hint="Contractor will use this to first log in" />}
+          <Inp label="Notification Email" value={form.notify_email} onChange={set("notify_email")} type="email" placeholder="alerts@company.com" />
+          <Inp label="Primary Industry" value={form.industry} onChange={set("industry")} type="select" options={industries} />
+          <Inp label="Plan" value={form.plan} onChange={set("plan")} type="select" options={[{ value: "Starter", label: "Starter — $299/mo" }, { value: "Growth", label: "Growth — $499/mo" }]} />
+        </div>
+        <Inp label="Calendly URL" value={form.calendly_url} onChange={set("calendly_url")} placeholder="https://calendly.com/contractorname/estimate" hint="Qualified leads will see this booking link after submitting the intake form" />
+        <Inp label="Internal Notes" value={form.notes} onChange={set("notes")} type="textarea" placeholder="Onboarding notes, special agreements, contact history…" />
+        <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+          <Btn variant="outline" onClick={onClose} style={{ flex: 1 }}>Cancel</Btn>
+          <Btn onClick={save} disabled={saving} style={{ flex: 2 }}>
+            {saving ? <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}><Spinner size={14} />{isNew ? "Creating…" : "Saving…"}</span> : isNew ? "Create Contractor →" : "Save Changes"}
+          </Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+
+// ─── ADMIN STATS ──────────────────────────────────────────────────────────────
+function AdminStats({contractors}){
+  const [allLeads,setAllLeads]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [dateRange,setDateRange]=useState("month"); // month | quarter | all
+
+  useEffect(()=>{
+    (async()=>{
+      try{
+        const chunks=await Promise.all(contractors.map(c=>dbAdmin.getLeadsForBusiness(c.id)));
+        setAllLeads(chunks.flat());
+      }catch(e){console.error(e);}
+      setLoading(false);
+    })();
+  },[contractors.length]);
+
+  if(loading)return <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:300,gap:12}}><Spinner/><span style={{color:T.muted}}>Loading platform data…</span></div>;
+
+  // Date filtering
+  const now=new Date();
+  const cutoff=dateRange==="month"
+    ?new Date(now.getFullYear(),now.getMonth(),1)
+    :dateRange==="quarter"
+    ?new Date(now.getFullYear(),Math.floor(now.getMonth()/3)*3,1)
+    :new Date(0);
+  const leads=allLeads.filter(l=>new Date(l.created_at)>=cutoff);
+
+  const total=leads.length;
+  const won=leads.filter(l=>l.status==="won").length;
+  const closeRate=total>0?Math.round((won/total)*100):0;
+  const avgScore=total>0?Math.round(leads.reduce((s,l)=>s+(l.score||0),0)/total):0;
+  const hot=leads.filter(l=>l.tier==="hot").length;
+  const overflow=leads.filter(l=>l.source==="overflow").length;
+  const autoAssigned=leads.filter(l=>l.source==="auto_assigned").length;
+
+  const industries=["HVAC","Roofing","Plumbing","Electrical"];
+  const cities=[...new Set(contractors.map(c=>c.city).filter(Boolean))].sort();
+
+  // Per-industry stats
+  const byIndustry=industries.map(ind=>{
+    const indLeads=leads.filter(l=>l.industry===ind);
+    const indContractors=contractors.filter(c=>c.industry===ind);
+    const indWon=indLeads.filter(l=>l.status==="won").length;
+    const indAvgScore=indLeads.length>0?Math.round(indLeads.reduce((s,l)=>s+(l.score||0),0)/indLeads.length):0;
+    return{
+      industry:ind,
+      leads:indLeads.length,
+      contractors:indContractors.length,
+      won:indWon,
+      closeRate:indLeads.length>0?Math.round((indWon/indLeads.length)*100):0,
+      avgScore:indAvgScore,
+      avgPerContractor:indContractors.length>0?Math.round(indLeads.length/indContractors.length):0,
+      hot:indLeads.filter(l=>l.tier==="hot").length,
+    };
+  }).sort((a,b)=>b.leads-a.leads);
+
+  // Per-city stats
+  const byCity=cities.map(city=>{
+    const cityContractors=contractors.filter(c=>c.city===city);
+    const cityLeads=leads.filter(l=>cityContractors.some(c=>c.id===l.business_id));
+    const cityWon=cityLeads.filter(l=>l.status==="won").length;
+    const cityAvgScore=cityLeads.length>0?Math.round(cityLeads.reduce((s,l)=>s+(l.score||0),0)/cityLeads.length):0;
+    const industries_rep=[...new Set(cityContractors.map(c=>c.industry))].join(", ");
+    return{
+      city,
+      contractors:cityContractors.length,
+      leads:cityLeads.length,
+      won:cityWon,
+      closeRate:cityLeads.length>0?Math.round((cityWon/cityLeads.length)*100):0,
+      avgScore:cityAvgScore,
+      avgPerContractor:cityContractors.length>0?Math.round(cityLeads.length/cityContractors.length):0,
+      industries:industries_rep,
+    };
+  }).sort((a,b)=>b.leads-a.leads);
+
+  // Per-plan stats
+  const byPlan=["Starter","Growth"].map(plan=>{
+    const planContractors=contractors.filter(c=>c.plan===plan);
+    const planLeads=leads.filter(l=>planContractors.some(c=>c.id===l.business_id));
+    const planWon=planLeads.filter(l=>l.status==="won").length;
+    const cap=plan==="Growth"?50:20;
+    const atCap=planContractors.filter(c=>{
+      const cLeads=planLeads.filter(l=>l.business_id===c.id).length;
+      return cLeads>=cap;
+    }).length;
+    return{
+      plan,contractors:planContractors.length,leads:planLeads.length,won:planWon,
+      closeRate:planLeads.length>0?Math.round((planWon/planLeads.length)*100):0,
+      avgPerContractor:planContractors.length>0?Math.round(planLeads.length/planContractors.length):0,
+      atCap,cap,
+    };
+  });
+
+  // Lead source breakdown
+  const sourceBreakdown=[
+    {label:"Direct (contractor URL)",key:"direct",color:T.green},
+    {label:"Auto-assigned (no URL)",key:"auto_assigned",color:T.cyan},
+    {label:"Overflow (cap/quality)",key:"overflow",color:"#A78BFA"},
+    {label:"Admin assigned",key:"admin_assigned",color:T.amber},
+    {label:"Unassigned",key:"unassigned",color:T.red},
+  ].map(s=>({...s,count:leads.filter(l=>l.source===s.key).length}));
+
+  // Lead quality distribution across platform
+  const qualityDist={
+    hot:leads.filter(l=>l.tier==="hot").length,
+    warm:leads.filter(l=>l.tier==="warm").length,
+    cold:leads.filter(l=>l.tier==="cold").length,
+  };
+
+  // Top performing contractors
+  const contractorPerf=contractors.map(c=>{
+    const cLeads=leads.filter(l=>l.business_id===c.id);
+    const cWon=cLeads.filter(l=>l.status==="won").length;
+    const cAvgScore=cLeads.length>0?Math.round(cLeads.reduce((s,l)=>s+(l.score||0),0)/cLeads.length):0;
+    return{...c,leads:cLeads.length,won:cWon,
+      closeRate:cLeads.length>0?Math.round((cWon/cLeads.length)*100):0,
+      avgScore:cAvgScore,
+    };
+  }).filter(c=>c.leads>0).sort((a,b)=>b.closeRate-a.closeRate);
+
+  // Weekly volume trend across platform
+  const weekBuckets={};
+  leads.forEach(l=>{
+    const d=new Date(l.created_at);
+    const key=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-W${Math.ceil(d.getDate()/7)}`;
+    if(!weekBuckets[key])weekBuckets[key]={key,total:0,won:0,hot:0};
+    weekBuckets[key].total++;
+    if(l.status==="won")weekBuckets[key].won++;
+    if(l.tier==="hot")weekBuckets[key].hot++;
+  });
+  const weekTrend=Object.values(weekBuckets).slice(-12);
+
+  // Urgency breakdown
+  const urgencyMap={"emergency":"🚨 Emergency","this_week":"📅 This Week","flexible":"🗓️ Flexible"};
+  const urgencyBreakdown=Object.entries(urgencyMap).map(([key,label])=>({
+    label,count:leads.filter(l=>l.urgency===key).length,
+    closeRate:leads.filter(l=>l.urgency===key).length>0
+      ?Math.round((leads.filter(l=>l.urgency===key&&l.status==="won").length/leads.filter(l=>l.urgency===key).length)*100):0,
+  }));
+
+  // Budget distribution
+  const budgetBands=[
+    {label:"<$500",key:"under_500"},{label:"$500-1k",key:"500_1000"},
+    {label:"$1-2k",key:"1000_2000"},{label:"$2-5k",key:"2000_5000"},{label:"$5k+",key:"5000_plus"},
+  ].map(b=>({...b,count:leads.filter(l=>l.budget===b.key).length}));
+
+  // Marketing insights: cities with 0 contractors for an industry = opportunity
+  const gaps=[];
+  industries.forEach(ind=>{
+    cities.forEach(city=>{
+      if(!contractors.some(c=>c.industry===ind&&c.city===city)){
+        const demand=leads.filter(l=>l.industry===ind&&byCity.find(c=>c.city===city)).length;
+        gaps.push({industry:ind,city,demand});
+      }
+    });
+  });
+  gaps.sort((a,b)=>b.demand-a.demand);
+
+  const SectionLabel=({c})=><div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:14}}>{c}</div>;
+
+  const StatCard=({label,value,sub,color,icon})=>(
+    <Card style={{padding:"16px 18px"}}>
+      {icon&&<div style={{fontSize:20,marginBottom:8}}>{icon}</div>}
+      <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:26,fontWeight:700,color:color||T.white,lineHeight:1,marginBottom:3}}>{value}</div>
+      <div style={{fontSize:11,color:T.muted,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:sub?2:0}}>{label}</div>
+      {sub&&<div style={{fontSize:11,color:T.offWhite,marginTop:2}}>{sub}</div>}
+    </Card>
+  );
+
+  const HBar=({label,value,max,color,right})=>(
+    <div style={{marginBottom:9}}>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+        <span style={{fontSize:12,color:T.offWhite}}>{label}</span>
+        <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11,color:color||T.muted}}>{right||value}</span>
+      </div>
+      <div style={{height:5,background:T.border,borderRadius:3,overflow:"hidden"}}>
+        <div style={{width:max>0?`${Math.min((value/max)*100,100)}%`:"0%",height:"100%",background:color||T.blueL,borderRadius:3,transition:"width 0.6s ease"}}/>
+      </div>
+    </div>
+  );
+
+  return <div style={{animation:"fadeIn 0.3s ease"}}>
+    {/* Header + date range selector */}
+    <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:24,flexWrap:"wrap",gap:12}}>
+      <div>
+        <h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:26,letterSpacing:-1,marginBottom:3}}>Platform Analytics</h2>
+        <p style={{color:T.muted,fontSize:13}}>{total.toLocaleString()} leads · {contractors.length} contractors · use this data to drive your sales outreach</p>
+      </div>
+      <div style={{display:"flex",gap:4,background:T.surface2,padding:3,borderRadius:8,border:`1px solid ${T.border}`}}>
+        {[{id:"month",label:"This Month"},{id:"quarter",label:"Quarter"},{id:"all",label:"All Time"}].map(r=>(
+          <button key={r.id} onClick={()=>setDateRange(r.id)} style={{padding:"6px 14px",borderRadius:6,border:"none",cursor:"pointer",fontSize:12,fontWeight:500,background:dateRange===r.id?T.blue:"none",color:dateRange===r.id?"white":T.muted,transition:"all 0.15s"}}>{r.label}</button>
+        ))}
+      </div>
+    </div>
+
+    {/* Top KPIs */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:10,marginBottom:20}} className="grid-2-mobile">
+      <StatCard label="Total Leads" value={total} color={T.blueL} icon="📋"/>
+      <StatCard label="Platform Close Rate" value={`${closeRate}%`} color={T.green} icon="✅"/>
+      <StatCard label="Avg Lead Score" value={avgScore} color={T.amber} icon="⭐"/>
+      <StatCard label="Hot Leads" value={hot} sub={`${total>0?Math.round((hot/total)*100):0}% of total`} color={T.red} icon="🔥"/>
+      <StatCard label="Overflow Routed" value={overflow} sub="quality/cap balanced" color="#A78BFA" icon="↗"/>
+      <StatCard label="Auto-Assigned" value={autoAssigned} sub="no contractor URL" color={T.cyan} icon="🤖"/>
+    </div>
+
+    {/* Row 1: By Industry + By City */}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}} className="grid-1-mobile">
+      <Card>
+        <SectionLabel c="Leads by Industry"/>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead>
+              <tr style={{borderBottom:`1px solid ${T.border}`}}>
+                {["Industry","Leads","Contractors","Avg/Contractor","Close %","Avg Score","Hot"].map(h=>(
+                  <th key={h} style={{padding:"5px 8px",textAlign:"left",fontSize:10,color:T.muted,fontFamily:"'JetBrains Mono',monospace",textTransform:"uppercase",letterSpacing:"0.06em",fontWeight:500}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {byIndustry.map((row,i)=>(
+                <tr key={row.industry} style={{borderBottom:i<byIndustry.length-1?`1px solid ${T.border}`:"none"}}>
+                  <td style={{padding:"9px 8px",fontWeight:600,color:T.white}}>{row.industry}</td>
+                  <td style={{padding:"9px 8px",fontFamily:"'JetBrains Mono',monospace",color:T.blueL}}>{row.leads}</td>
+                  <td style={{padding:"9px 8px",fontFamily:"'JetBrains Mono',monospace",color:T.muted}}>{row.contractors}</td>
+                  <td style={{padding:"9px 8px",fontFamily:"'JetBrains Mono',monospace",color:T.offWhite}}>{row.avgPerContractor}</td>
+                  <td style={{padding:"9px 8px",fontFamily:"'JetBrains Mono',monospace",color:row.closeRate>=30?T.green:row.closeRate>=15?T.amber:T.muted}}>{row.closeRate}%</td>
+                  <td style={{padding:"9px 8px",fontFamily:"'JetBrains Mono',monospace",color:T.amber}}>{row.avgScore}</td>
+                  <td style={{padding:"9px 8px",fontFamily:"'JetBrains Mono',monospace",color:T.red}}>{row.hot}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      <Card>
+        <SectionLabel c="Leads by City"/>
+        {byCity.length===0
+          ?<div style={{color:T.muted,fontSize:13,padding:"16px 0"}}>No city data yet — assign cities to contractors in Settings</div>
+          :<div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              <thead>
+                <tr style={{borderBottom:`1px solid ${T.border}`}}>
+                  {["City","Leads","Contractors","Avg/Contractor","Close %","Score"].map(h=>(
+                    <th key={h} style={{padding:"5px 8px",textAlign:"left",fontSize:10,color:T.muted,fontFamily:"'JetBrains Mono',monospace",textTransform:"uppercase",letterSpacing:"0.06em",fontWeight:500}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {byCity.map((row,i)=>(
+                  <tr key={row.city} style={{borderBottom:i<byCity.length-1?`1px solid ${T.border}`:"none"}}>
+                    <td style={{padding:"9px 8px",fontWeight:600,color:T.white}}>{row.city}</td>
+                    <td style={{padding:"9px 8px",fontFamily:"'JetBrains Mono',monospace",color:T.blueL}}>{row.leads}</td>
+                    <td style={{padding:"9px 8px",fontFamily:"'JetBrains Mono',monospace",color:T.muted}}>{row.contractors}</td>
+                    <td style={{padding:"9px 8px",fontFamily:"'JetBrains Mono',monospace",color:T.offWhite}}>{row.avgPerContractor}</td>
+                    <td style={{padding:"9px 8px",fontFamily:"'JetBrains Mono',monospace",color:row.closeRate>=30?T.green:row.closeRate>=15?T.amber:T.muted}}>{row.closeRate}%</td>
+                    <td style={{padding:"9px 8px",fontFamily:"'JetBrains Mono',monospace",color:T.amber}}>{row.avgScore}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        }
+      </Card>
+    </div>
+
+    {/* Row 2: Lead Source + Quality Distribution */}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:12}} className="grid-1-mobile">
+      <Card>
+        <SectionLabel c="Lead Source Breakdown"/>
+        {sourceBreakdown.map(s=><HBar key={s.key} label={s.label} value={s.count} max={total} color={s.color} right={`${s.count} (${total>0?Math.round((s.count/total)*100):0}%)`}/>)}
+        <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${T.border}`,fontSize:11,color:T.muted}}>
+          Overflow = lead re-routed by cap or quality balancing. Auto = no contractor URL in referral.
+        </div>
+      </Card>
+
+      <Card>
+        <SectionLabel c="Lead Quality Distribution"/>
+        {[
+          {label:"🔥 Hot (75+)",val:qualityDist.hot,color:T.red},
+          {label:"☀️ Warm (50–74)",val:qualityDist.warm,color:T.amber},
+          {label:"❄️ Cold (<50)",val:qualityDist.cold,color:T.muted},
+        ].map(r=><HBar key={r.label} label={r.label} value={r.val} max={total} color={r.color}/>)}
+        <div style={{marginTop:14,paddingTop:12,borderTop:`1px solid ${T.border}`}}>
+          <div style={{fontSize:11,color:T.muted,marginBottom:6}}>Quality balance score</div>
+          <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:22,color:T.amber,fontWeight:700}}>{avgScore}<span style={{fontSize:13,color:T.muted}}>/100</span></div>
+          <div style={{fontSize:11,color:T.muted,marginTop:2}}>Platform avg lead score</div>
+        </div>
+      </Card>
+
+      <Card>
+        <SectionLabel c="Urgency & Close Rate"/>
+        {urgencyBreakdown.map(u=>(
+          <div key={u.label} style={{marginBottom:12,paddingBottom:12,borderBottom:`1px solid ${T.border}`}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+              <span style={{fontSize:13,color:T.offWhite}}>{u.label}</span>
+              <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11,color:T.muted}}>{u.count} leads</span>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <div style={{flex:1,height:4,background:T.border,borderRadius:2,overflow:"hidden"}}>
+                <div style={{width:`${u.closeRate}%`,height:"100%",background:u.label.includes("Emergency")?T.red:u.label.includes("Week")?T.amber:T.muted,borderRadius:2}}/>
+              </div>
+              <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:10,color:T.muted,flexShrink:0}}>{u.closeRate}% close</span>
+            </div>
+          </div>
+        ))}
+      </Card>
+    </div>
+
+    {/* Row 3: Weekly trend + Budget distribution */}
+    <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:12,marginBottom:12}} className="grid-1-mobile">
+      <Card>
+        <SectionLabel c="Weekly Lead Volume (platform-wide)"/>
+        {weekTrend.length===0
+          ?<div style={{color:T.muted,fontSize:13}}>No trend data yet</div>
+          :<div>
+            <div style={{display:"flex",alignItems:"flex-end",gap:4,height:100,marginBottom:8}}>
+              {weekTrend.map((w,i)=>{
+                const mx=Math.max(...weekTrend.map(x=>x.total),1);
+                const h=Math.round((w.total/mx)*100);
+                return <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                  <div style={{fontSize:8,color:T.muted,fontFamily:"'JetBrains Mono',monospace"}}>{w.total}</div>
+                  <div style={{width:"100%",position:"relative",borderRadius:"3px 3px 0 0",overflow:"hidden",height:`${h}%`,minHeight:4}}>
+                    <div style={{position:"absolute",inset:0,background:`linear-gradient(180deg,${T.blue}80,${T.blueL})`}}/>
+                    {w.won>0&&<div style={{position:"absolute",bottom:0,left:0,right:0,height:`${Math.round((w.won/w.total)*100)}%`,background:T.green+"99"}}/>}
+                    {w.hot>0&&<div style={{position:"absolute",top:0,left:0,right:0,height:`${Math.round((w.hot/w.total)*100)}%`,background:T.red+"60"}}/>}
+                  </div>
+                  <div style={{fontSize:7,color:T.muted,fontFamily:"'JetBrains Mono',monospace"}}>W{i+1}</div>
+                </div>;
+              })}
+            </div>
+            <div style={{display:"flex",gap:14,fontSize:10,color:T.muted}}>
+              <span style={{display:"flex",alignItems:"center",gap:4}}><div style={{width:8,height:8,borderRadius:2,background:T.blueL,flexShrink:0}}/>Total</span>
+              <span style={{display:"flex",alignItems:"center",gap:4}}><div style={{width:8,height:8,borderRadius:2,background:T.green,flexShrink:0}}/>Won</span>
+              <span style={{display:"flex",alignItems:"center",gap:4}}><div style={{width:8,height:8,borderRadius:2,background:T.red,flexShrink:0}}/>Hot</span>
+            </div>
+          </div>
+        }
+      </Card>
+
+      <Card>
+        <SectionLabel c="Budget Distribution"/>
+        {budgetBands.map(b=><HBar key={b.key} label={b.label} value={b.count} max={total} color={T.blueL}/>)}
+        <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${T.border}`,fontSize:11,color:T.muted}}>
+          Median budget band: <span style={{color:T.white,fontWeight:600}}>{budgetBands.sort((a,b)=>b.count-a.count)[0]?.label||"—"}</span>
+        </div>
+      </Card>
+    </div>
+
+    {/* Row 4: Plan performance + Top contractors */}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1.5fr",gap:12,marginBottom:12}} className="grid-1-mobile">
+      <Card>
+        <SectionLabel c="Performance by Plan"/>
+        {byPlan.map(p=>(
+          <div key={p.plan} style={{marginBottom:16,paddingBottom:16,borderBottom:`1px solid ${T.border}`}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <Pill color={p.plan==="Growth"?"won":"new"}>{p.plan}</Pill>
+                <span style={{fontSize:12,color:T.muted}}>{p.plan==="Growth"?"$499/mo":"$299/mo"}</span>
+              </div>
+              <span style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.muted}}>{p.contractors} contractors</span>
+            </div>
+            {[
+              {label:"Leads this period",val:p.leads,color:T.blueL},
+              {label:"Close rate",val:`${p.closeRate}%`,color:T.green},
+              {label:"Avg per contractor",val:p.avgPerContractor,color:T.amber},
+              {label:"At cap",val:`${p.atCap} / ${p.contractors}`,color:p.atCap>0?T.red:T.muted},
+            ].map(r=>(
+              <div key={r.label} style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                <span style={{fontSize:12,color:T.muted}}>{r.label}</span>
+                <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:r.color,fontWeight:600}}>{r.val}</span>
+              </div>
+            ))}
+          </div>
+        ))}
+      </Card>
+
+      <Card>
+        <SectionLabel c="Top Contractors by Close Rate"/>
+        {contractorPerf.length===0
+          ?<div style={{color:T.muted,fontSize:13}}>No closed leads yet</div>
+          :<div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              <thead>
+                <tr style={{borderBottom:`1px solid ${T.border}`}}>
+                  {["Company","City","Industry","Leads","Won","Close%","Avg Score"].map(h=>(
+                    <th key={h} style={{padding:"5px 8px",textAlign:"left",fontSize:10,color:T.muted,fontFamily:"'JetBrains Mono',monospace",textTransform:"uppercase",letterSpacing:"0.06em",fontWeight:500}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {contractorPerf.slice(0,10).map((c,i)=>(
+                  <tr key={c.id} style={{borderBottom:i<Math.min(contractorPerf.length,10)-1?`1px solid ${T.border}`:"none"}}>
+                    <td style={{padding:"8px 8px",fontWeight:600,color:T.white,maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.company||c.email}</td>
+                    <td style={{padding:"8px 8px",color:T.muted,fontSize:11}}>{c.city||"—"}</td>
+                    <td style={{padding:"8px 8px",color:T.offWhite}}>{c.industry||"—"}</td>
+                    <td style={{padding:"8px 8px",fontFamily:"'JetBrains Mono',monospace",color:T.blueL}}>{c.leads}</td>
+                    <td style={{padding:"8px 8px",fontFamily:"'JetBrains Mono',monospace",color:T.green}}>{c.won}</td>
+                    <td style={{padding:"8px 8px",fontFamily:"'JetBrains Mono',monospace",color:c.closeRate>=30?T.green:c.closeRate>=15?T.amber:T.muted,fontWeight:700}}>{c.closeRate}%</td>
+                    <td style={{padding:"8px 8px",fontFamily:"'JetBrains Mono',monospace",color:T.amber}}>{c.avgScore}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        }
+      </Card>
+    </div>
+
+    {/* Row 5: Market gaps (marketing intelligence) */}
+    <Card style={{marginBottom:12}}>
+      <SectionLabel c="Market Gaps — Untapped Industry × City Combinations"/>
+      <p style={{fontSize:12,color:T.muted,marginBottom:14}}>Cities where you have leads but no contractor for that industry. These are your highest-value sales targets.</p>
+      {gaps.length===0
+        ?<div style={{color:T.green,fontSize:13}}>✓ All active cities have coverage across all industries</div>
+        :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:8}}>
+          {gaps.slice(0,12).map((g,i)=>(
+            <div key={i} style={{background:T.surface2,border:`1px solid ${T.border2}`,borderRadius:10,padding:"12px 14px"}}>
+              <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
+                <span style={{fontSize:16}}>{g.industry==="HVAC"?"🌬️":g.industry==="Roofing"?"🏠":g.industry==="Plumbing"?"🔧":"⚡"}</span>
+                <span style={{fontSize:13,fontWeight:600,color:T.white}}>{g.industry}</span>
+              </div>
+              <div style={{fontSize:12,color:T.muted,marginBottom:4}}>{g.city}</div>
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <div style={{flex:1,height:3,background:T.border,borderRadius:2,overflow:"hidden"}}>
+                  <div style={{width:`${Math.min(g.demand*10,100)}%`,height:"100%",background:T.red,borderRadius:2}}/>
+                </div>
+                <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:10,color:T.red,flexShrink:0}}>{g.demand} unrouted</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      }
+    </Card>
+
+    {/* Row 6: Contractor health snapshot */}
+    <Card>
+      <SectionLabel c="Contractor Health Snapshot"/>
+      <p style={{fontSize:12,color:T.muted,marginBottom:14}}>Contractors sorted by activity. Use this to identify who needs check-ins, upsell opportunities, or churn risk.</p>
+      <div style={{overflowX:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+          <thead>
+            <tr style={{borderBottom:`1px solid ${T.border}`}}>
+              {["Company","City","Industry","Plan","Leads","Won","Close%","Avg Score","Cap Used","Status"].map(h=>(
+                <th key={h} style={{padding:"6px 8px",textAlign:"left",fontSize:10,color:T.muted,fontFamily:"'JetBrains Mono',monospace",textTransform:"uppercase",letterSpacing:"0.06em",fontWeight:500}}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {[...contractorPerf,...contractors.filter(c=>!contractorPerf.find(p=>p.id===c.id)).map(c=>({...c,leads:0,won:0,closeRate:0,avgScore:0}))].map((c,i,arr)=>{
+              const cap=c.plan==="Growth"?50:20;
+              const capPct=Math.round((c.leads/cap)*100);
+              const status=c.leads===0?"😴 Inactive":capPct>=100?"🔴 At Cap":capPct>=80?"🟡 Near Cap":c.closeRate>=30?"🟢 Performing":"🔵 Active";
+              return(
+                <tr key={c.id} style={{borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
+                  <td style={{padding:"8px 8px",fontWeight:600,color:T.white,maxWidth:130,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.company||c.email}</td>
+                  <td style={{padding:"8px 8px",color:T.muted,fontSize:11}}>{c.city||"—"}</td>
+                  <td style={{padding:"8px 8px",color:T.offWhite}}>{c.industry||"—"}</td>
+                  <td style={{padding:"8px 8px"}}><Pill color={c.plan==="Growth"?"won":"new"}>{c.plan||"—"}</Pill></td>
+                  <td style={{padding:"8px 8px",fontFamily:"'JetBrains Mono',monospace",color:T.blueL}}>{c.leads}</td>
+                  <td style={{padding:"8px 8px",fontFamily:"'JetBrains Mono',monospace",color:T.green}}>{c.won}</td>
+                  <td style={{padding:"8px 8px",fontFamily:"'JetBrains Mono',monospace",color:c.closeRate>=30?T.green:c.closeRate>=15?T.amber:T.muted}}>{c.closeRate}%</td>
+                  <td style={{padding:"8px 8px",fontFamily:"'JetBrains Mono',monospace",color:T.amber}}>{c.avgScore}</td>
+                  <td style={{padding:"8px 8px"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:5}}>
+                      <div style={{width:40,height:4,background:T.border,borderRadius:2,overflow:"hidden"}}>
+                        <div style={{width:`${Math.min(capPct,100)}%`,height:"100%",background:capPct>=100?T.red:capPct>=80?T.amber:T.green,borderRadius:2}}/>
+                      </div>
+                      <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:9,color:T.muted}}>{capPct}%</span>
+                    </div>
+                  </td>
+                  <td style={{padding:"8px 8px",fontSize:11}}>{status}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  </div>;
+}
+
+// ─── ADMIN DASHBOARD ──────────────────────────────────────────────────────────
+function AdminDashboard({ adminUser, onLogout }) {
+  const [contractors, setContractors] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [showModal, setShowModal] = useState(false);
+  const [editingContractor, setEditingContractor] = useState(null);
+  const [impersonating, setImpersonating] = useState(null);
+  const [impersonateLeads, setImpersonateLeads] = useState([]);
+  const [impersonateLoading, setImpersonateLoading] = useState(false);
+  const [toast, setToast] = useState(null);
+  const [selectedLead, setSelectedLead] = useState(null);
+  const [activeTab, setActiveTab] = useState("contractors");
+  const [copiedId, setCopiedId] = useState(null);
+  const [unassignedLeads, setUnassignedLeads] = useState([]);
+  const [assigningLead, setAssigningLead] = useState(null);
+  const [assignTarget, setAssignTarget] = useState("");
+
+  const showToast = t => setToast(t);
+
+  const loadContractors = async () => {
+    setLoading(true);
+    try { const d = await dbAdmin.getAllBusinesses(); setContractors(d); }
+    catch (e) { showToast({ message: "Failed to load contractors", type: "error" }); }
+    setLoading(false);
+  };
+
+  const loadUnassigned = async () => {
+    try { const d = await db.getUnassignedLeads(); setUnassignedLeads(d); }
+    catch (e) { console.error(e); }
+  };
+  useEffect(() => { loadContractors(); loadUnassigned(); }, []);
+
+  const openImpersonate = async (contractor) => {
+    setImpersonating(contractor);
+    setImpersonateLoading(true);
+    try {
+      const leads = await dbAdmin.getLeadsForBusiness(contractor.id);
+      setImpersonateLeads(leads);
+    } catch (e) { showToast({ message: "Failed to load leads", type: "error" }); }
+    setImpersonateLoading(false);
+  };
+
+  const copyUrl = (url, id) => {
+    navigator.clipboard.writeText(url);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+    showToast({ message: "URL copied!", type: "success" });
+  };
+
+  const getIntakeUrl = (c) => {
+    const base = window.location.origin;
+    const ind = (c.industry || "hvac").toLowerCase();
+    return `${base}/?industry=${ind}&bid=${c.id}`;
+  };
+
+  const filtered = contractors.filter(c =>
+    !search ||
+    c.company?.toLowerCase().includes(search.toLowerCase()) ||
+    c.email?.toLowerCase().includes(search.toLowerCase()) ||
+    c.city?.toLowerCase().includes(search.toLowerCase()) ||
+    c.industry?.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const totalLeads = contractors.reduce((s, c) => s + (c.lead_count || 0), 0);
+  const activePlans = contractors.filter(c => c.plan).length;
+
+  // ── Impersonation view ──
+  if (impersonating) {
+    const leads = impersonateLeads;
+    const total = leads.length;
+    const won = leads.filter(l => l.status === "won").length;
+    const active = leads.filter(l => l.status === "new" || l.status === "contacted").length;
+    const avgScore = total > 0 ? Math.round(leads.reduce((s, l) => s + (l.score || 0), 0) / total) : 0;
+    const sc = { new: leads.filter(l => l.status === "new").length, contacted: leads.filter(l => l.status === "contacted").length, won, lost: leads.filter(l => l.status === "lost").length };
+
+    return (
+      <div style={{ minHeight: "100vh", background: T.bg, display: "flex", flexDirection: "column", width: "100%" }}>
+        {/* Impersonation banner */}
+        <div style={{ background: "rgba(239,68,68,0.12)", border: "none", borderBottom: "1px solid rgba(239,68,68,0.25)", padding: "10px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 14 }}>👁️</span>
+            <span style={{ fontSize: 13, color: "#F87171", fontWeight: 600 }}>Viewing as: {impersonating.company || impersonating.email}</span>
+            <Pill color="lost">Admin View</Pill>
+          </div>
+          <Btn variant="danger" size="sm" onClick={() => { setImpersonating(null); setImpersonateLeads([]); }}>← Back to Admin</Btn>
+        </div>
+
+        <nav style={{ height: 52, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px", borderBottom: `1px solid ${T.border}`, background: T.surface, flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <LogoMark size={24} />
+            <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 15 }}>{impersonating.company || "Contractor"}</span>
+            <span style={{ fontSize: 11, color: T.muted }}>· {impersonating.plan} · {impersonating.city}</span>
+          </div>
+          <div style={{ fontSize: 12, color: T.muted }}>Intake URL: <code style={{ fontFamily: "'JetBrains Mono',monospace", color: T.blueL, fontSize: 11 }}>{getIntakeUrl(impersonating)}</code></div>
+        </nav>
+
+        <div style={{ flex: 1, padding: "20px 24px", width: "100%", maxWidth: 1400, margin: "0 auto" }}>
+          {impersonateLoading ? (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 200, gap: 12 }}><Spinner /><span style={{ color: T.muted }}>Loading leads…</span></div>
+          ) : (
+            <>
+              {/* Stats */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 16 }}>
+                {[{ label: "Total Leads", value: total, color: T.blueL }, { label: "Active", value: active, color: T.cyan }, { label: "Won", value: won, color: T.green }, { label: "Avg Score", value: avgScore, color: T.amber }].map(s => (
+                  <div key={s.label} style={{ background: T.surface, border: `1px solid ${T.border2}`, borderRadius: 12, padding: "14px 16px" }}>
+                    <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 22, fontWeight: 700, color: s.color, marginBottom: 2 }}>{s.value}</div>
+                    <div style={{ fontSize: 11, color: T.muted }}>{s.label}</div>
+                  </div>
+                ))}
+              </div>
+              {/* Contractor info card */}
+              <div style={{ background: T.surface, border: `1px solid ${T.border2}`, borderRadius: 12, padding: "16px 20px", marginBottom: 16, display: "flex", gap: 24, flexWrap: "wrap" }}>
+                {[["Email", impersonating.email], ["Phone", impersonating.phone], ["City", impersonating.city], ["Industry", impersonating.industry], ["Plan", impersonating.plan], ["Calendly", impersonating.calendly_url || "Not set"], ["Notify Email", impersonating.notify_email]].map(([k, v]) => v && (
+                  <div key={k}>
+                    <div style={{ fontSize: 10, color: T.muted, fontFamily: "'JetBrains Mono',monospace", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>{k}</div>
+                    <div style={{ fontSize: 13, color: T.white, fontWeight: 500, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v}</div>
+                  </div>
+                ))}
+                {impersonating.notes && (
+                  <div style={{ flex: "1 1 100%", marginTop: 8, paddingTop: 12, borderTop: `1px solid ${T.border}` }}>
+                    <div style={{ fontSize: 10, color: T.muted, fontFamily: "'JetBrains Mono',monospace", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Notes</div>
+                    <div style={{ fontSize: 13, color: T.offWhite }}>{impersonating.notes}</div>
+                  </div>
+                )}
+              </div>
+              {/* Leads table */}
+              <div style={{ background: T.surface, border: `1px solid ${T.border2}`, borderRadius: 14, overflow: "hidden" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "2fr 1.4fr 1fr 1fr 1.4fr 70px 90px", padding: "10px 16px", borderBottom: `1px solid ${T.border}`, fontSize: 10, fontFamily: "'JetBrains Mono',monospace", color: T.muted, textTransform: "uppercase", letterSpacing: "0.07em" }}>
+                  {["Lead", "Issue", "Budget", "Zip", "Score", "Tier", "Status"].map(h => <div key={h}>{h}</div>)}
+                </div>
+                {leads.length === 0 ? (
+                  <div style={{ padding: 40, textAlign: "center", color: T.muted }}>
+                    <div style={{ fontSize: 24, marginBottom: 8 }}>📭</div>
+                    <div style={{ fontSize: 14, color: T.offWhite }}>No leads yet for this contractor</div>
+                  </div>
+                ) : leads.map((lead, i) => (
+                  <div key={lead.id} onClick={() => setSelectedLead(lead)}
+                    style={{ display: "grid", gridTemplateColumns: "2fr 1.4fr 1fr 1fr 1.4fr 70px 90px", padding: "12px 16px", borderBottom: i < leads.length - 1 ? `1px solid ${T.border}` : "none", cursor: "pointer", transition: "background 0.15s" }}
+                    onMouseEnter={e => e.currentTarget.style.background = T.surface2}
+                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 1 }}>{lead.name}</div>
+                      <div style={{ fontSize: 11, color: T.muted }}>{lead.phone} · {new Date(lead.created_at).toLocaleDateString()}</div>
+                    </div>
+                    <div style={{ fontSize: 12, color: T.offWhite, alignSelf: "center" }}>{lead.is_name || lead.issue_type}</div>
+                    <div style={{ fontSize: 12, color: T.offWhite, alignSelf: "center", textTransform: "capitalize" }}>{lead.budget?.replace(/_/g, " ")}</div>
+                    <div style={{ fontSize: 12, color: T.offWhite, alignSelf: "center" }}>{lead.zip_code || "—"}</div>
+                    <div style={{ alignSelf: "center" }}><ScoreBar score={lead.score} /></div>
+                    <div style={{ alignSelf: "center" }}><Pill color={lead.tier}>{lead.tier}</Pill></div>
+                    <div style={{ alignSelf: "center" }}><Pill color={lead.status}>{lead.status}</Pill></div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+        <LeadDetail lead={selectedLead} onClose={() => setSelectedLead(null)} onStatusChange={() => {}} calendlyUrl={impersonating.calendly_url} />
+        {toast && <Toast message={toast.message} type={toast.type} onDone={() => setToast(null)} />}
+      </div>
+    );
+  }
+
+  // ── Main admin view ──
+  return (
+    <div style={{ minHeight: "100vh", background: T.bg, display: "flex", flexDirection: "column", width: "100%" }}>
+      <nav style={{ height: 56, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px", borderBottom: `1px solid ${T.border}`, background: "rgba(9,12,17,0.97)", backdropFilter: "blur(16px)", position: "sticky", top: 0, zIndex: 100, flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <LogoMark size={26} />
+          <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 16 }}>Streamline</span>
+          <span style={{ background: "rgba(239,68,68,0.15)", color: "#F87171", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 4, padding: "2px 8px", fontSize: 10, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", letterSpacing: "0.07em", marginLeft: 4 }}>ADMIN</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          {[{ id: "contractors", label: "Contractors", icon: "👥" }, { id: "unassigned", label: `Unassigned ${unassignedLeads.length > 0 ? "("+unassignedLeads.length+")" : ""}`, icon: "📥" }, { id: "overview", label: "Overview", icon: "📊" }].map(tab => (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{ background: activeTab === tab.id ? T.surface2 : "none", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 13px", borderRadius: 7, color: activeTab === tab.id ? T.white : T.muted, transition: "all 0.2s", display: "flex", alignItems: "center", gap: 5 }}>
+              <span style={{ fontSize: 12 }}>{tab.icon}</span>{tab.label}
+            </button>
+          ))}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 12, color: T.muted }}>{adminUser.email}</span>
+          <Btn variant="outline" size="sm" onClick={onLogout} style={{ fontSize: 12, padding: "6px 10px" }}>Sign Out</Btn>
+        </div>
+      </nav>
+
+      <div style={{ flex: 1, padding: "24px", width: "100%", maxWidth: 1400, margin: "0 auto" }}>
+        {activeTab === "overview" ? (
+          <AdminStats contractors={contractors}/>
+        ) : activeTab === "unassigned" ? (
+          <div style={{ animation: "fadeIn 0.3s ease" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+              <div>
+                <h2 style={{ fontFamily: "'DM Serif Display',serif", fontSize: 26, letterSpacing: -1, marginBottom: 3 }}>Unassigned Leads</h2>
+                <p style={{ color: T.muted, fontSize: 13 }}>Leads from general ads with no contractor URL. Assign them manually.</p>
+              </div>
+              <Btn variant="outline" onClick={() => { loadUnassigned(); loadContractors(); }}>Refresh</Btn>
+            </div>
+            {unassignedLeads.length === 0 ? (
+              <div style={{ background: T.surface, border: `1px solid ${T.border2}`, borderRadius: 14, padding: 56, textAlign: "center" }}>
+                <div style={{ fontSize: 32, marginBottom: 12 }}>✅</div>
+                <div style={{ fontSize: 15, color: T.offWhite, marginBottom: 6 }}>No unassigned leads</div>
+                <div style={{ fontSize: 13, color: T.muted }}>All leads from general ads have been assigned.</div>
+              </div>
+            ) : (
+              <div style={{ background: T.surface, border: `1px solid ${T.border2}`, borderRadius: 14, overflow: "hidden" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1.8fr 1fr 1fr 1fr 1.2fr 80px 140px", padding: "10px 16px", borderBottom: `1px solid ${T.border}`, fontSize: 10, fontFamily: "'JetBrains Mono',monospace", color: T.muted, textTransform: "uppercase", letterSpacing: "0.07em" }}>
+                  {["Lead", "Industry", "Issue", "Budget", "Score", "Tier", "Assign To"].map(h => <div key={h}>{h}</div>)}
+                </div>
+                {unassignedLeads.map((lead, i) => (
+                  <div key={lead.id} style={{ display: "grid", gridTemplateColumns: "1.8fr 1fr 1fr 1fr 1.2fr 80px 140px", padding: "13px 16px", borderBottom: i < unassignedLeads.length - 1 ? `1px solid ${T.border}` : "none", alignItems: "center" }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{lead.name}</div>
+                      <div style={{ fontSize: 11, color: T.muted }}>{lead.phone} · {lead.zip_code}</div>
+                    </div>
+                    <div style={{ fontSize: 12, color: T.offWhite }}>{lead.industry || "—"}</div>
+                    <div style={{ fontSize: 12, color: T.offWhite }}>{lead.is_name || lead.issue_type}</div>
+                    <div style={{ fontSize: 12, color: T.offWhite, textTransform: "capitalize" }}>{lead.budget?.replace(/_/g, " ") || "—"}</div>
+                    <div><ScoreBar score={lead.score} /></div>
+                    <div><Pill color={lead.tier}>{lead.tier}</Pill></div>
+                    <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+                      {assigningLead === lead.id ? (
+                        <div style={{ display: "flex", gap: 5, width: "100%" }}>
+                          <select value={assignTarget} onChange={e => setAssignTarget(e.target.value)} style={{ flex: 1, background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 6, padding: "4px 6px", color: T.white, fontSize: 11, outline: "none", minWidth: 0 }}>
+                            <option value="">Pick…</option>
+                            {contractors.filter(c => !lead.industry || c.industry?.toLowerCase() === lead.industry?.toLowerCase()).map(c => (
+                              <option key={c.id} value={c.id}>{c.company || c.email}</option>
+                            ))}
+                          </select>
+                          <button onClick={async () => {
+                            if (!assignTarget) return;
+                            try {
+                              await db.assignLeadToContractor(lead.id, assignTarget);
+                              showToast({ message: "Lead assigned!", type: "success" });
+                              setAssigningLead(null); setAssignTarget("");
+                              loadUnassigned();
+                            } catch (e) { showToast({ message: "Assignment failed", type: "error" }); }
+                          }} style={{ background: T.green + "20", border: `1px solid ${T.green}50`, borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: T.green, fontSize: 11, fontWeight: 600 }}>✓</button>
+                          <button onClick={() => { setAssigningLead(null); setAssignTarget(""); }} style={{ background: "none", border: `1px solid ${T.border2}`, borderRadius: 6, padding: "4px 6px", cursor: "pointer", color: T.muted, fontSize: 11 }}>✗</button>
+                        </div>
+                      ) : (
+                        <button onClick={() => { setAssigningLead(lead.id); setAssignTarget(""); }} style={{ background: "rgba(37,99,235,0.1)", border: "1px solid rgba(37,99,235,0.25)", borderRadius: 6, padding: "5px 10px", cursor: "pointer", color: T.blueL, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}>Assign →</button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div style={{ animation: "fadeIn 0.3s ease" }}>
+            {/* Header row */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, gap: 12, flexWrap: "wrap" }}>
+              <div>
+                <h2 style={{ fontFamily: "'DM Serif Display',serif", fontSize: 26, letterSpacing: -1, marginBottom: 3 }}>Contractors</h2>
+                <p style={{ color: T.muted, fontSize: 13 }}>{contractors.length} total · Click a row to view their dashboard · Click URL to copy</p>
+              </div>
+              <Btn onClick={() => { setEditingContractor(null); setShowModal(true); }} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                + Add Contractor
+              </Btn>
+            </div>
+
+            {/* Search */}
+            <div style={{ position: "relative", marginBottom: 14, maxWidth: 400 }}>
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by company, city, industry…" style={{ width: "100%", background: T.surface, border: `1px solid ${T.border2}`, borderRadius: 8, padding: "9px 12px 9px 32px", color: T.white, fontSize: 13, outline: "none" }} />
+              <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: T.muted, fontSize: 12 }}>🔍</span>
+            </div>
+
+            {/* Table */}
+            {loading ? (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 200, gap: 12 }}><Spinner /><span style={{ color: T.muted }}>Loading contractors…</span></div>
+            ) : (
+              <div style={{ background: T.surface, border: `1px solid ${T.border2}`, borderRadius: 14, overflow: "hidden" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1.8fr 1fr 1fr 1fr 1.2fr 2.4fr 120px", padding: "10px 16px", borderBottom: `1px solid ${T.border}`, fontSize: 10, fontFamily: "'JetBrains Mono',monospace", color: T.muted, textTransform: "uppercase", letterSpacing: "0.07em" }}>
+                  {["Company", "Industry", "City", "Plan", "Calendly", "Intake URL", ""].map(h => <div key={h}>{h}</div>)}
+                </div>
+                {filtered.length === 0 ? (
+                  <div style={{ padding: 48, textAlign: "center", color: T.muted }}>
+                    <div style={{ fontSize: 28, marginBottom: 10 }}>👥</div>
+                    <div style={{ fontSize: 14, color: T.offWhite, marginBottom: 6 }}>No contractors yet</div>
+                    <div style={{ fontSize: 13, marginBottom: 20 }}>Click "Add Contractor" to onboard your first customer.</div>
+                    <Btn onClick={() => { setEditingContractor(null); setShowModal(true); }}>+ Add First Contractor</Btn>
+                  </div>
+                ) : filtered.map((c, i) => {
+                  const intakeUrl = getIntakeUrl(c);
+                  const isCopied = copiedId === c.id;
+                  return (
+                    <div key={c.id}
+                      style={{ display: "grid", gridTemplateColumns: "1.8fr 1fr 1fr 1fr 1.2fr 2.4fr 120px", padding: "13px 16px", borderBottom: i < filtered.length - 1 ? `1px solid ${T.border}` : "none", transition: "background 0.15s", alignItems: "center" }}
+                      onMouseEnter={e => e.currentTarget.style.background = T.surface2}
+                      onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                      {/* Company */}
+                      <div style={{ cursor: "pointer" }} onClick={() => openImpersonate(c)}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: T.white, marginBottom: 1 }}>{c.company || "—"}</div>
+                        <div style={{ fontSize: 11, color: T.muted }}>{c.email}</div>
+                      </div>
+                      {/* Industry */}
+                      <div style={{ fontSize: 12, color: T.offWhite }}>{c.industry || "—"}</div>
+                      {/* City */}
+                      <div style={{ fontSize: 12, color: T.offWhite }}>{c.city || "—"}</div>
+                      {/* Plan */}
+                      <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                        <Pill color={c.plan === "Growth" ? "won" : "new"}>{c.plan || "—"}</Pill>
+                      </div>
+                      {/* Calendly */}
+                      <div style={{ fontSize: 11, color: c.calendly_url ? T.green : T.muted }}>{c.calendly_url ? "✓ Set" : "Not set"}</div>
+                      {/* Intake URL */}
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <code style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: T.blueL, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{intakeUrl}</code>
+                        <button onClick={e => { e.stopPropagation(); copyUrl(intakeUrl, c.id); }} style={{ background: isCopied ? "rgba(16,185,129,0.15)" : T.surface2, border: `1px solid ${isCopied ? T.green : T.border2}`, borderRadius: 5, padding: "3px 8px", cursor: "pointer", color: isCopied ? T.green : T.muted, fontSize: 10, fontWeight: 600, flexShrink: 0, transition: "all 0.2s" }}>
+                          {isCopied ? "✓" : "Copy"}
+                        </button>
+                      </div>
+                      {/* Actions */}
+                      <div style={{ display: "flex", gap: 5 }} onClick={e => e.stopPropagation()}>
+                        <button onClick={() => openImpersonate(c)} title="View their dashboard" style={{ background: "rgba(37,99,235,0.1)", border: "1px solid rgba(37,99,235,0.25)", borderRadius: 6, padding: "5px 8px", cursor: "pointer", color: T.blueL, fontSize: 11, fontWeight: 600 }}>View</button>
+                        <button onClick={() => { setEditingContractor(c); setShowModal(true); }} title="Edit" style={{ background: T.surface2, border: `1px solid ${T.border2}`, borderRadius: 6, padding: "5px 8px", cursor: "pointer", color: T.muted, fontSize: 11 }}>Edit</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {showModal && (
+        <ContractorModal
+          contractor={editingContractor}
+          onClose={() => { setShowModal(false); setEditingContractor(null); }}
+          onSave={loadContractors}
+          toast={showToast}
+        />
+      )}
+      {toast && <Toast message={toast.message} type={toast.type} onDone={() => setToast(null)} />}
+    </div>
+  );
+}
+
 // ─── APP ROOT ─────────────────────────────────────────────────────────────────
 export default function App(){
   const [page,setPage]=useState("loading");
   const [user,setUser]=useState(null);
+  const [adminUser,setAdminUser]=useState(null);
   const [intakeInd,setIntakeInd]=useState("hvac");
+
+  // Detect ?admin=1 in URL to show admin login
+  const isAdminRoute=new URLSearchParams(window.location.search).get("admin")==="1";
 
   useEffect(()=>{
     const urlInd=getIndustryFromURL();
     db.getSession().then(async session=>{
       if(session){
+        // Admin email bypasses contractor dashboard
+        if(session.user.email===ADMIN_EMAIL){
+          setAdminUser(session.user);
+          setPage("admin");
+          return;
+        }
         const business=await db.getBusiness(session.user.id);
         setUser({...session.user,...business});
         setPage("dashboard");
+      }else if(isAdminRoute){
+        setPage("adminLogin");
       }else if(urlInd){
         setIntakeInd(urlInd);setPage("intake");
       }else{
@@ -1414,17 +2562,26 @@ export default function App(){
       }
     });
     const{data:{subscription}}=sb.auth.onAuthStateChange(async(event,session)=>{
-      if(event==="SIGNED_OUT"){setUser(null);setPage("landing");}
+      if(event==="SIGNED_OUT"){
+        setUser(null);setAdminUser(null);
+        setPage(isAdminRoute?"adminLogin":"landing");
+      }
     });
     return()=>subscription.unsubscribe();
   },[]);
 
   const goIntake=ind=>{setIntakeInd(ind||"hvac");setPage("intake");};
+  const handleLogout=async()=>{await db.signOut();setUser(null);setAdminUser(null);setPage("landing");};
+  const handleAdminLogout=async()=>{await db.signOut();setAdminUser(null);setPage("adminLogin");};
 
-  if(page==="loading")return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:T.bg,flexDirection:"column",gap:14}}>
-    <LogoMark size={38}/><Spinner size={22}/><span style={{color:T.muted,fontSize:13,marginTop:4}}>Loading…</span>
-  </div>;
+  if(page==="loading")return(
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:T.bg,flexDirection:"column",gap:14}}>
+      <LogoMark size={38}/><Spinner size={22}/><span style={{color:T.muted,fontSize:13,marginTop:4}}>Loading…</span>
+    </div>
+  );
+  if(page==="adminLogin")return <AdminLogin onAuth={u=>{setAdminUser(u);setPage("admin");}}/>;
+  if(page==="admin"&&adminUser)return <AdminDashboard adminUser={adminUser} onLogout={handleAdminLogout}/>;
   if(page==="intake")return <IntakeForm industryKey={intakeInd} onBack={()=>setPage("landing")}/>;
-  if(page==="dashboard"&&user)return <Dashboard user={user} onLogout={async()=>{await db.signOut();setUser(null);setPage("landing");}}/>;
+  if(page==="dashboard"&&user)return <Dashboard user={user} onLogout={handleLogout}/>;
   return <LandingPage onLogin={u=>{setUser(u);setPage("dashboard");}} onIntakeForm={goIntake}/>;
 }
