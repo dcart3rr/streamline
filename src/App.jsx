@@ -157,6 +157,8 @@ const db={
   createInvoice:async(inv)=>{const{data,error}=await sb.from("invoices").insert([inv]).select().single();if(error)throw error;return data;},
   markInvoicePaid:async(id)=>{const{error}=await sb.from("invoices").update({status:"paid",paid_at:new Date().toISOString()}).eq("id",id);if(error)throw error;},
   markLeadsBilled:async(leadIds,invoiceId)=>{const{error}=await sb.from("leads").update({billed:true,invoice_id:invoiceId}).in("id",leadIds);if(error)throw error;},
+  markLeadVerified:async(id,verified,note="")=>{const{error}=await sb.from("leads").update({verified,dispute_note:note||null}).eq("id",id);if(error)throw error;},
+  getUnverifiedWonLeads:async()=>{const{data}=await sb.from("leads").select("*").eq("status","won").is("verified",null).order("completed_at",{ascending:false});return data||[];},
   getNotifications:async(bid)=>{const{data}=await sb.from("notifications").select("*").eq("business_id",bid).order("created_at",{ascending:false}).limit(50);return data||[];},
   insertNotification:async(n)=>sb.from("notifications").insert([n]),
   // Billing / Stripe
@@ -831,35 +833,51 @@ function LeadDetail({lead,onClose,onStatusChange,calendlyUrl}){
       <Btn variant="danger" onClick={()=>{onStatusChange(lead.id,"lost",{});onClose();}} style={{flex:1,minWidth:110}}>✗ Lost</Btn>
       {lead.status==="new"&&<Btn variant="outline" onClick={()=>{onStatusChange(lead.id,"contacted",{});onClose();}} style={{flex:1,minWidth:110}}>📞 Contacted</Btn>}
     </div>}
-    {lead.status==="won"&&<div style={{background:"rgba(16,185,129,0.08)",border:"1px solid rgba(16,185,129,0.2)",borderRadius:10,padding:"12px 14px"}}>
+    {lead.status==="won"&&<div style={{background:"rgba(16,185,129,0.08)",border:`1px solid ${lead.verified===false?"rgba(239,68,68,0.3)":"rgba(16,185,129,0.2)"}`,borderRadius:10,padding:"12px 14px"}}>
       <div style={{fontSize:11,color:T.muted,fontFamily:"'JetBrains Mono',monospace",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Job Summary</div>
-      <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+      <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8,marginBottom:6}}>
         <span style={{fontSize:13,color:T.green,fontWeight:600}}>{lead.job_value?`$${Number(lead.job_value).toLocaleString()} job value`:"No job value recorded"}</span>
         {lead.completed_at&&<span style={{fontSize:12,color:T.muted}}>Completed {new Date(lead.completed_at).toLocaleDateString()}</span>}
-        {lead.billed&&<span style={{fontSize:11,background:"rgba(245,158,11,0.12)",color:T.amber,border:"1px solid rgba(245,158,11,0.25)",borderRadius:4,padding:"2px 7px"}}>Invoiced</span>}
       </div>
+      <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:lead.verified===false&&lead.dispute_note?8:0}}>
+        {lead.billed&&<span style={{fontSize:10,background:"rgba(245,158,11,0.12)",color:T.amber,border:"1px solid rgba(245,158,11,0.25)",borderRadius:4,padding:"2px 7px",fontWeight:600}}>Invoiced</span>}
+        {lead.verified===true&&<span style={{fontSize:10,background:"rgba(16,185,129,0.12)",color:T.green,border:"1px solid rgba(16,185,129,0.25)",borderRadius:4,padding:"2px 7px",fontWeight:600}}>✓ Verified</span>}
+        {lead.verified===false&&<span style={{fontSize:10,background:"rgba(239,68,68,0.1)",color:T.red,border:"1px solid rgba(239,68,68,0.25)",borderRadius:4,padding:"2px 7px",fontWeight:600}}>✗ Disputed</span>}
+        {(lead.verified===null||lead.verified===undefined)&&<span style={{fontSize:10,background:"rgba(245,158,11,0.08)",color:T.amber,border:"1px solid rgba(245,158,11,0.2)",borderRadius:4,padding:"2px 7px"}}>⏳ Pending admin verification</span>}
+      </div>
+      {lead.verified===false&&lead.dispute_note&&<div style={{background:"rgba(239,68,68,0.08)",border:"1px solid rgba(239,68,68,0.2)",borderRadius:7,padding:"8px 10px",fontSize:12,color:"#F87171",lineHeight:1.6}}>⚠️ Admin note: {lead.dispute_note} — Email hello@streamline.io to resolve.</div>}
     </div>}
     {/* Won job modal */}
     <Modal open={showWonModal} onClose={()=>setShowWonModal(false)} title="Log Won Job">
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
         <div style={{background:"rgba(16,185,129,0.06)",border:"1px solid rgba(16,185,129,0.2)",borderRadius:10,padding:"12px 14px",fontSize:13,color:T.offWhite,lineHeight:1.6}}>
-          🎉 Great work closing <strong>{lead.name}</strong>! Log the job details so your performance fee can be calculated accurately.
+          🎉 Great work closing <strong>{lead.name}</strong>! Log the job details below. Your admin will verify before invoicing.
         </div>
-        <Inp label="Total Job Value ($)" value={wonJobValue} onChange={setWonJobValue} type="number" placeholder="e.g. 3500" hint="The total amount the customer paid for the job"/>
+        <Inp label="Total Job Value ($)" value={wonJobValue} onChange={setWonJobValue} type="number" placeholder="e.g. 3500" hint="Total amount the customer paid"/>
         <Inp label="Completion Date" value={wonDate} onChange={setWonDate} type="date"/>
-        <Inp label="Notes (optional)" value={wonNotes} onChange={setWonNotes} placeholder="Any notes about this job…"/>
+        <div>
+          <div style={{fontSize:12,fontWeight:500,color:T.offWhite,marginBottom:6}}>Verification — Invoice # or Reference <span style={{color:T.muted,fontWeight:400}}>(recommended)</span></div>
+          <input value={wonNotes} onChange={e=>setWonNotes(e.target.value)} placeholder="e.g. Invoice #1042, signed work order, or customer name confirmation…" style={{width:"100%",background:T.surface2,border:`1px solid ${T.border2}`,borderRadius:8,padding:"10px 12px",color:T.white,fontSize:13,outline:"none",fontFamily:"inherit"}}/>
+          <div style={{fontSize:11,color:T.muted,marginTop:5}}>Providing a reference helps your admin verify the job quickly and prevents disputes. Invoice numbers, work order IDs, or contract references all work.</div>
+        </div>
         {wonJobValue&&Number(wonJobValue)>0&&<div style={{background:T.surface2,border:`1px solid ${T.border2}`,borderRadius:10,padding:"12px 14px"}}>
-          <div style={{fontSize:11,color:T.muted,marginBottom:6}}>Estimated performance fee</div>
-          <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:22,fontWeight:700,color:T.amber}}>${(Number(wonJobValue)*0.05).toFixed(0)} <span style={{fontSize:12,color:T.muted,fontWeight:400}}>approx</span></div>
-          <div style={{fontSize:11,color:T.muted,marginTop:2}}>Based on plan rate — your admin will invoice the exact amount</div>
+          <div style={{fontSize:11,color:T.muted,marginBottom:4}}>Performance fee on this job</div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+            <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:22,fontWeight:700,color:T.amber}}>${lead.perfFee||150} <span style={{fontSize:12,color:T.muted,fontWeight:400}}>flat fee</span></div>
+            <div style={{fontSize:12,color:T.muted}}>Job value: ${Number(wonJobValue).toLocaleString()}</div>
+          </div>
+          <div style={{fontSize:11,color:T.muted,marginTop:2}}>Invoiced at month-end after admin verification</div>
         </div>}
+        <div style={{background:"rgba(245,158,11,0.06)",border:"1px solid rgba(245,158,11,0.15)",borderRadius:8,padding:"10px 12px",fontSize:11,color:T.muted,lineHeight:1.6}}>
+          ℹ️ This submission is sent to your admin for verification. Disputes or questions? Email hello@streamline.io
+        </div>
         <div style={{display:"flex",gap:8}}>
           <Btn variant="outline" onClick={()=>setShowWonModal(false)} style={{flex:1}}>Cancel</Btn>
           <Btn variant="success" onClick={async()=>{
-            const extra={job_value:wonJobValue?Number(wonJobValue):null,completed_at:wonDate||new Date().toISOString().split("T")[0],won_notes:wonNotes,billed:false};
+            const extra={job_value:wonJobValue?Number(wonJobValue):null,completed_at:wonDate||new Date().toISOString().split("T")[0],won_notes:wonNotes,billed:false,verified:null};
             await onStatusChange(lead.id,"won",extra);
             setShowWonModal(false);onClose();
-          }} style={{flex:2}}>✓ Confirm Won Job</Btn>
+          }} style={{flex:2}}>✓ Submit Won Job</Btn>
         </div>
       </div>
     </Modal>
@@ -1055,6 +1073,8 @@ function SettingsPanel({user,onSave,toast}){
   const [cancelReason,setCancelReason]=useState("");
   const [cancelling,setCancelling]=useState(false);
   const [showPlanChange,setShowPlanChange]=useState(false);
+  const [showReactivate,setShowReactivate]=useState(false);
+  const [selectedPlan,setSelectedPlan]=useState(null);
   const set=k=>v=>setForm(f=>({...f,[k]:v}));
 
   useEffect(()=>{
@@ -1116,9 +1136,10 @@ function SettingsPanel({user,onSave,toast}){
           </div>
         </div>
       </div>
-      <div style={{display:"flex",gap:8}}>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
         {billingStatus==="active"&&<button onClick={()=>setShowPlanChange(true)} style={{background:T.surface2,border:`1px solid ${T.border2}`,borderRadius:8,padding:"7px 14px",cursor:"pointer",color:T.offWhite,fontSize:12,fontWeight:500}}>Change Plan</button>}
         {(billingStatus==="active"||billingStatus==="past_due")&&<button onClick={()=>setShowCancel(true)} style={{background:"none",border:`1px solid rgba(239,68,68,0.3)`,borderRadius:8,padding:"7px 14px",cursor:"pointer",color:T.red,fontSize:12}}>Cancel Plan</button>}
+        {(billingStatus==="cancel_pending"||billingStatus==="cancelled")&&<button onClick={()=>setShowReactivate(true)} style={{background:"rgba(16,185,129,0.12)",border:"1px solid rgba(16,185,129,0.3)",borderRadius:8,padding:"7px 14px",cursor:"pointer",color:T.green,fontSize:12,fontWeight:500}}>Re-activate Plan →</button>}
       </div>
     </div>
 
@@ -1202,21 +1223,89 @@ function SettingsPanel({user,onSave,toast}){
     </div>
 
     {/* ── Plan Change Modal ── */}
-    <Modal open={showPlanChange} onClose={()=>setShowPlanChange(false)} title="Change Plan">
+    <Modal open={showPlanChange} onClose={()=>{setShowPlanChange(false);setSelectedPlan(null);}} title="Change Plan">
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
-        <p style={{fontSize:13,color:T.muted}}>Plan changes take effect at the start of your next billing period.</p>
-        {["Starter","Growth"].map(p=>(
-          <div key={p} onClick={()=>{}} style={{padding:"16px",borderRadius:12,border:`2px solid ${user.plan===p?T.blue:T.border2}`,background:user.plan===p?"rgba(37,99,235,0.08)":T.surface2,cursor:"pointer"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-              <div style={{fontSize:15,fontWeight:600,color:T.white}}>{p}</div>
-              <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:14,color:T.blueL}}>${p==="Starter"?"299":"499"}/mo</div>
+        <div style={{background:"rgba(37,99,235,0.08)",border:"1px solid rgba(37,99,235,0.2)",borderRadius:10,padding:"12px 14px"}}>
+          <div style={{fontSize:13,fontWeight:600,color:T.blueL,marginBottom:3}}>📅 Changes take effect at end of billing period</div>
+          <div style={{fontSize:12,color:T.muted}}>You'll stay on your current plan until {new Date(new Date().getFullYear(),new Date().getMonth()+1,0).toLocaleDateString('en-US',{month:'long',day:'numeric'})}. The new plan starts on your next billing date.</div>
+        </div>
+        {["Starter","Growth"].map(p=>{
+          const isCurrent=user.plan===p;
+          const isSelected=selectedPlan===p;
+          return(
+            <div key={p} onClick={()=>!isCurrent&&setSelectedPlan(p)}
+              style={{padding:"18px",borderRadius:12,border:`2px solid ${isCurrent?T.blue:isSelected?"rgba(16,185,129,0.6)":T.border2}`,background:isCurrent?"rgba(37,99,235,0.08)":isSelected?"rgba(16,185,129,0.06)":T.surface2,cursor:isCurrent?"default":"pointer",transition:"all 0.15s"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <div style={{fontSize:15,fontWeight:600,color:T.white}}>{p}</div>
+                  {isCurrent&&<span style={{fontSize:10,background:"rgba(37,99,235,0.2)",color:T.blueL,borderRadius:4,padding:"2px 7px",fontWeight:600}}>CURRENT</span>}
+                  {isSelected&&<span style={{fontSize:10,background:"rgba(16,185,129,0.2)",color:T.green,borderRadius:4,padding:"2px 7px",fontWeight:600}}>SELECTED</span>}
+                </div>
+                <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:16,fontWeight:700,color:isCurrent?T.blueL:isSelected?T.green:T.offWhite}}>${p==="Starter"?"299":"499"}<span style={{fontSize:11,color:T.muted,fontWeight:400}}>/mo</span></div>
+              </div>
+              <div style={{fontSize:12,color:T.muted,marginBottom:8}}>{p==="Starter"?"Exclusive leads · $150 performance fee per closed job":"Exclusive leads · $100 performance fee per closed job · Priority queue · Account manager"}</div>
+              {!isCurrent&&<div style={{fontSize:11,color:isSelected?T.green:T.muted}}>{isSelected?"✓ Click 'Confirm Change' below to schedule this":"Click to select"}</div>}
             </div>
-            <div style={{fontSize:12,color:T.muted}}>{p==="Starter"?"20 leads/month · $150/close":"50 leads/month · $100/close"}</div>
-            {user.plan===p&&<div style={{marginTop:8,fontSize:11,color:T.green}}>✓ Your current plan</div>}
-          </div>
-        ))}
-        <p style={{fontSize:12,color:T.muted}}>To change your plan, contact us at <span style={{color:T.blueL}}>hello@streamline.io</span> and we'll update it within 24 hours.</p>
-        <Btn variant="outline" onClick={()=>setShowPlanChange(false)}>Close</Btn>
+          );
+        })}
+        <div style={{display:"flex",gap:8}}>
+          <Btn variant="outline" onClick={()=>{setShowPlanChange(false);setSelectedPlan(null);}} style={{flex:1}}>Cancel</Btn>
+          <Btn onClick={async()=>{
+            if(!selectedPlan||selectedPlan===user.plan){toast({message:"Please select a different plan",type:"error"});return;}
+            try{
+              await db.upsertBusiness({id:user.id,plan:selectedPlan});
+              onSave({...user,plan:selectedPlan});
+              setShowPlanChange(false);setSelectedPlan(null);
+              toast({message:`Plan change to ${selectedPlan} scheduled — takes effect at end of billing period`,type:"success"});
+            }catch(e){toast({message:"Failed to update plan. Email hello@streamline.io",type:"error"});}
+          }} disabled={!selectedPlan||selectedPlan===user.plan} style={{flex:2,opacity:(!selectedPlan||selectedPlan===user.plan)?0.5:1}}>
+            {selectedPlan&&selectedPlan!==user.plan?`Confirm Change to ${selectedPlan}`:"Select a Plan Above"}
+          </Btn>
+        </div>
+      </div>
+    </Modal>
+
+    {/* ── Re-activate Modal ── */}
+    <Modal open={showReactivate} onClose={()=>{setShowReactivate(false);setSelectedPlan(null);}} title="Re-activate Your Plan">
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        <div style={{background:"rgba(16,185,129,0.08)",border:"1px solid rgba(16,185,129,0.2)",borderRadius:10,padding:"14px 16px"}}>
+          <div style={{fontSize:13,fontWeight:600,color:T.green,marginBottom:4}}>👋 Welcome back</div>
+          <div style={{fontSize:12,color:T.muted}}>Re-activating restores your lead pipeline immediately. Choose the plan that works best for your current volume.</div>
+        </div>
+        {["Starter","Growth"].map(p=>{
+          const isSelected=selectedPlan===p;
+          return(
+            <div key={p} onClick={()=>setSelectedPlan(p)}
+              style={{padding:"18px",borderRadius:12,border:`2px solid ${isSelected?"rgba(16,185,129,0.6)":T.border2}`,background:isSelected?"rgba(16,185,129,0.06)":T.surface2,cursor:"pointer",transition:"all 0.15s"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <div style={{fontSize:15,fontWeight:600,color:T.white}}>{p}</div>
+                  {p==="Growth"&&<span style={{fontSize:10,background:"rgba(37,99,235,0.15)",color:T.blueL,borderRadius:4,padding:"2px 7px",fontWeight:600}}>POPULAR</span>}
+                  {isSelected&&<span style={{fontSize:10,background:"rgba(16,185,129,0.2)",color:T.green,borderRadius:4,padding:"2px 7px",fontWeight:600}}>✓ SELECTED</span>}
+                </div>
+                <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:16,fontWeight:700,color:isSelected?T.green:T.offWhite}}>${p==="Starter"?"299":"499"}<span style={{fontSize:11,color:T.muted,fontWeight:400}}>/mo</span></div>
+              </div>
+              <div style={{fontSize:12,color:T.muted}}>{p==="Starter"?"Exclusive leads · $150 performance fee per closed job":"Exclusive leads · $100 performance fee per closed job · Priority queue · Account manager"}</div>
+            </div>
+          );
+        })}
+        <div style={{display:"flex",gap:8}}>
+          <Btn variant="outline" onClick={()=>{setShowReactivate(false);setSelectedPlan(null);}} style={{flex:1}}>Not Yet</Btn>
+          <Btn onClick={async()=>{
+            if(!selectedPlan){toast({message:"Please select a plan",type:"error"});return;}
+            try{
+              await db.upsertBusiness({id:user.id,plan:selectedPlan});
+              await db.upsertBilling({business_id:user.id,status:"active",cancel_requested:false,cancel_reason:null,cancel_requested_at:null});
+              onSave({...user,plan:selectedPlan});
+              setBilling(b=>({...b,status:"active",cancel_requested:false}));
+              setShowReactivate(false);setSelectedPlan(null);
+              toast({message:`Welcome back! Your ${selectedPlan} plan is now active.`,type:"success"});
+            }catch(e){toast({message:"Failed to re-activate. Email hello@streamline.io",type:"error"});}
+          }} disabled={!selectedPlan} style={{flex:2,opacity:!selectedPlan?0.5:1}}>
+            {selectedPlan?`Re-activate ${selectedPlan} Plan →`:"Select a Plan"}
+          </Btn>
+        </div>
+        <div style={{fontSize:11,color:T.muted,textAlign:"center"}}>Secure payment via Stripe · Cancel anytime</div>
       </div>
     </Modal>
 
@@ -1464,10 +1553,10 @@ function Dashboard({user,onLogout}){
   return <div style={{minHeight:"100vh",background:T.bg,display:"flex",flexDirection:"column",width:"100%"}}>
     {/* NAV */}
     <nav style={{height:56,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 20px",borderBottom:`1px solid ${T.border}`,background:"rgba(9,12,17,0.97)",backdropFilter:"blur(16px)",position:"sticky",top:0,zIndex:100,flexShrink:0,width:"100%"}}>
-      <div style={{display:"flex",alignItems:"center",gap:8}}>
+      <button onClick={onLogout} style={{display:"flex",alignItems:"center",gap:8,background:"none",border:"none",cursor:"pointer"}} title="Back to homepage">
         <LogoMark size={26}/>
-        <span style={{fontFamily:"'DM Serif Display',serif",fontSize:16}}>Streamline</span>
-      </div>
+        <span style={{fontFamily:"'DM Serif Display',serif",fontSize:16,color:T.white}}>Streamline</span>
+      </button>
       <div style={{display:"flex",alignItems:"center",gap:2}}>
         {TABS.map(tab=>(
           <button key={tab.id} onClick={()=>setView(tab.id)} style={{background:view===tab.id?T.surface2:"none",border:"none",cursor:"pointer",fontSize:13,fontWeight:500,padding:"6px 13px",borderRadius:7,color:view===tab.id?T.white:T.muted,transition:"all 0.2s",display:"flex",alignItems:"center",gap:5}}>
@@ -1512,6 +1601,49 @@ function Dashboard({user,onLogout}){
             ))}
           </div>
 
+          {/* Live Lead Preview — top new/hot lead */}
+          {leads.filter(l=>l.status==="new").length>0&&(()=>{
+            const preview=[...leads].filter(l=>l.status==="new").sort((a,b)=>b.score-a.score)[0];
+            const BL={budget:"Budget",urgency:"Urgency",ownership:"Ownership",size:"Property Size",clarity:"Issue Clarity",contact:"Contact Quality"};
+            const MX={budget:20,urgency:20,ownership:15,size:15,clarity:15,contact:15};
+            const bd=typeof preview.breakdown==="string"?JSON.parse(preview.breakdown||"{}"):preview.breakdown||{};
+            return(
+              <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:12,marginBottom:14,overflow:"hidden",cursor:"pointer"}} onClick={()=>setSelected(preview)}>
+                <div style={{padding:"10px 16px",borderBottom:`1px solid ${T.border}`,background:T.surface2,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <div style={{width:7,height:7,borderRadius:"50%",background:T.green,animation:"pulse 2s infinite"}}/>
+                    <span style={{fontSize:12,fontWeight:600}}>Latest Lead</span>
+                    <Pill color={preview.tier}>{preview.tier}</Pill>
+                  </div>
+                  <span style={{fontSize:11,color:T.muted}}>Click to open full details →</span>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:0}}>
+                  <div style={{padding:"14px 16px"}}>
+                    <div style={{fontSize:15,fontWeight:700,marginBottom:2,color:T.white}}>{preview.name}</div>
+                    <div style={{fontSize:12,color:T.muted,marginBottom:12}}>{preview.is_name||preview.issue_type} · {preview.zip_code}</div>
+                    <div style={{display:"flex",flexDirection:"column",gap:7}}>
+                      {Object.entries(bd).slice(0,4).map(([k,v])=>{
+                        const max=MX[k]||15;const pct=(v/max)*100;const c=pct>=75?T.green:pct>=40?T.amber:T.red;
+                        return <div key={k}>
+                          <div style={{display:"flex",justifyContent:"space-between",fontSize:10,marginBottom:2}}>
+                            <span style={{color:T.muted}}>{BL[k]||k}</span>
+                            <span style={{color:c,fontFamily:"'JetBrains Mono',monospace"}}>{v}/{max}</span>
+                          </div>
+                          <div style={{height:3,background:T.border,borderRadius:2,overflow:"hidden"}}><div style={{width:`${pct}%`,height:"100%",background:c,transition:"width 0.5s ease",borderRadius:2}}/></div>
+                        </div>;
+                      })}
+                    </div>
+                    {preview.estimate_range&&<div style={{marginTop:12,background:"rgba(16,185,129,0.08)",border:"1px solid rgba(16,185,129,0.2)",borderRadius:7,padding:"6px 10px",fontSize:11,color:T.green}}>Est: {preview.estimate_range} · Ready to contact</div>}
+                  </div>
+                  <div style={{padding:"14px 16px",borderLeft:`1px solid ${T.border}`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minWidth:80}}>
+                    <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:36,fontWeight:700,color:preview.tier==="hot"?T.green:preview.tier==="warm"?T.amber:T.muted,lineHeight:1}}>{preview.score}</div>
+                    <div style={{fontSize:10,color:T.muted,marginTop:3}}>/ 100</div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Monthly performance summary */}
           {(()=>{
             const now=new Date();
@@ -1523,8 +1655,10 @@ function Dashboard({user,onLogout}){
             const monthAvgScore=monthLeads.length>0?Math.round(monthLeads.reduce((s,l)=>s+(l.score||0),0)/monthLeads.length):0;
             const monthCloseRate=monthLeads.length>0?Math.round((monthWon/monthLeads.length)*100):0;
             const contactRate=monthLeads.length>0?Math.round((monthContacted/monthLeads.length)*100):0;
-            return <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:12,padding:"12px 20px",marginBottom:14,display:"flex",alignItems:"center",flexWrap:"wrap",gap:0}}>
-              <div style={{fontSize:11,color:T.muted,fontFamily:"'JetBrains Mono',monospace",textTransform:"uppercase",letterSpacing:"0.07em",marginRight:20,flexShrink:0}}>{monthName}</div>
+            return <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:12,marginBottom:14,overflow:"hidden",width:"100%",display:"grid",gridTemplateColumns:"120px repeat(6,1fr)"}}>
+              <div style={{padding:"16px 20px",borderRight:`1px solid ${T.border}`,display:"flex",alignItems:"center",background:T.surface2}}>
+                <span style={{fontSize:11,color:T.muted,fontFamily:"'JetBrains Mono',monospace",textTransform:"uppercase",letterSpacing:"0.07em",whiteSpace:"nowrap"}}>{monthName.toUpperCase()}</span>
+              </div>
               {[
                 {label:"New Leads",value:monthLeads.length,color:T.blueL},
                 {label:"Contacted",value:monthContacted,color:T.cyan},
@@ -1532,12 +1666,12 @@ function Dashboard({user,onLogout}){
                 {label:"Close Rate",value:`${monthCloseRate}%`,color:T.green},
                 {label:"Contact Rate",value:`${contactRate}%`,color:T.amber},
                 {label:"Avg Score",value:monthAvgScore,color:T.amber},
-              ].map((s,i)=><div key={s.label} style={{display:"flex",alignItems:"center",gap:16,paddingLeft:i>0?20:0,borderLeft:i>0?"1px solid rgba(255,255,255,0.07)":"none",marginLeft:i>0?4:0}}>
-                <div>
-                  <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:16,fontWeight:700,color:s.color,lineHeight:1}}>{s.value}</div>
-                  <div style={{fontSize:10,color:T.muted,marginTop:2}}>{s.label}</div>
+              ].map((s,i)=>(
+                <div key={s.label} style={{padding:"14px 16px",borderLeft:`1px solid ${T.border}`,display:"flex",flexDirection:"column",justifyContent:"center"}}>
+                  <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:20,fontWeight:700,color:s.color,lineHeight:1}}>{s.value}</div>
+                  <div style={{fontSize:10,color:T.muted,marginTop:4,whiteSpace:"nowrap"}}>{s.label}</div>
                 </div>
-              </div>)}
+              ))}
             </div>;
           })()}
           {/* Filters row */}
@@ -2120,10 +2254,19 @@ function LandingPage({onLogin,onIntakeForm,onApply,onIndustry}){
           <Btn size="lg" onClick={onApply}>Get Started →</Btn>
           <Btn variant="outline" size="lg" onClick={()=>scrollTo("industries")}>See Industries</Btn>
         </div>
-        {/* Industry pills — now link to industry pages */}
-        <div style={{display:"flex",justifyContent:"center",gap:8,flexWrap:"wrap"}}>
-          {Object.entries(INDUSTRIES).map(([k,v])=>(
-            <span key={k} onClick={()=>onIndustry(k)} style={{background:"rgba(255,255,255,0.04)",border:`1px solid ${T.border2}`,borderRadius:100,padding:"6px 16px",fontSize:12,color:T.offWhite,fontWeight:500,cursor:"pointer",transition:"all 0.2s",backdropFilter:"blur(8px)"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=v.color+"90";e.currentTarget.style.background=v.color+"12";e.currentTarget.style.color=v.color;}} onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border2;e.currentTarget.style.background="rgba(255,255,255,0.04)";e.currentTarget.style.color=T.offWhite;}}>{v.icon} {v.label}</span>
+        {/* Social proof trust bar */}
+        <div style={{display:"flex",justifyContent:"center",gap:0,flexWrap:"wrap",background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,overflow:"hidden",backdropFilter:"blur(8px)"}}>
+          {[
+            {icon:"🔒",stat:"100%",label:"Exclusive leads"},
+            {icon:"⚡",stat:"<60s",label:"Delivery time"},
+            {icon:"⭐",stat:"87%",label:"Qualification rate"},
+            {icon:"🚫",stat:"$0",label:"Setup fee"},
+          ].map((s,i)=>(
+            <div key={s.stat} style={{padding:"12px 20px",borderLeft:i>0?"1px solid rgba(255,255,255,0.07)":"none",flex:1,textAlign:"center",minWidth:100}}>
+              <div style={{fontSize:14,marginBottom:2}}>{s.icon}</div>
+              <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:14,fontWeight:700,color:T.white,lineHeight:1,marginBottom:2}}>{s.stat}</div>
+              <div style={{fontSize:10,color:T.muted}}>{s.label}</div>
+            </div>
           ))}
         </div>
       </div>
@@ -2952,8 +3095,10 @@ function AdminInvoicing({contractors,toast}){
         <Btn variant="outline" onClick={load}>Refresh</Btn>
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:20}} className="grid-2-mobile">
+      {(()=>{const pendingVerify=wonLeads.filter(l=>l.verified===null||l.verified===undefined).length;return(
+      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:20}} className="grid-2-mobile">
         {[
+          {label:"Needs Verification",value:pendingVerify,color:pendingVerify>0?T.amber:T.green,icon:pendingVerify>0?"⚠️":"✅"},
           {label:"Unbilled Fees",value:`$${totalUnbilled.toLocaleString()}`,color:T.amber,icon:"⏳"},
           {label:"Awaiting Payment",value:`$${totalPending.toLocaleString()}`,color:"#A78BFA",icon:"📤"},
           {label:"Collected",value:`$${totalCollected.toLocaleString()}`,color:T.green,icon:"💰"},
@@ -2966,11 +3111,47 @@ function AdminInvoicing({contractors,toast}){
           </div>
         ))}
       </div>
+      );})()}
 
       {loading?(
         <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:200,gap:12}}><Spinner/><span style={{color:T.muted}}>Loading won jobs…</span></div>
       ):(
         <>
+          {/* ── Verification Queue ── */}
+          {wonLeads.filter(l=>l.verified===null||l.verified===undefined).length>0&&(
+            <div style={{marginBottom:24}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+                <span style={{fontSize:14}}>⚠️</span>
+                <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.amber,textTransform:"uppercase",letterSpacing:"0.08em"}}>
+                  Verification Queue — {wonLeads.filter(l=>l.verified===null||l.verified===undefined).length} jobs pending review
+                </div>
+              </div>
+              <div style={{background:"rgba(245,158,11,0.04)",border:"1px solid rgba(245,158,11,0.2)",borderRadius:14,overflow:"hidden"}}>
+                <div style={{display:"grid",gridTemplateColumns:"1.8fr 1.2fr 1fr 1fr 1fr 1.5fr 160px",padding:"9px 16px",borderBottom:"1px solid rgba(245,158,11,0.15)",fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.07em"}}>
+                  {["Customer","Contractor","Service","Job Value","Submitted","Reference / Notes","Verify"].map(h=><div key={h}>{h}</div>)}
+                </div>
+                {wonLeads.filter(l=>l.verified===null||l.verified===undefined).map((l,li,arr)=>{
+                  const contractor=contractors.find(c=>c.id===l.business_id);
+                  return(
+                    <div key={l.id} style={{display:"grid",gridTemplateColumns:"1.8fr 1.2fr 1fr 1fr 1fr 1.5fr 160px",padding:"12px 16px",borderBottom:li<arr.length-1?"1px solid rgba(245,158,11,0.1)":"none",alignItems:"center",transition:"background 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background="rgba(245,158,11,0.03)"} onMouseLeave={e=>e.currentTarget.style.background="none"}>
+                      <div><div style={{fontSize:13,fontWeight:600,color:T.white}}>{l.name}</div><div style={{fontSize:11,color:T.muted}}>{l.email}</div></div>
+                      <div style={{fontSize:12,color:T.offWhite}}>{contractor?.company||"—"}</div>
+                      <div style={{fontSize:12,color:T.muted}}>{l.is_name||l.issue_type}</div>
+                      <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:13,color:l.job_value?T.green:T.muted}}>{l.job_value?`$${Number(l.job_value).toLocaleString()}`:"—"}</div>
+                      <div style={{fontSize:11,color:T.muted}}>{l.completed_at?new Date(l.completed_at).toLocaleDateString():"—"}</div>
+                      <div style={{fontSize:11,color:l.won_notes?T.offWhite:T.muted,fontStyle:l.won_notes?"normal":"italic"}}>{l.won_notes||"No reference provided"}</div>
+                      <div style={{display:"flex",gap:5}}>
+                        <button onClick={async()=>{try{await db.markLeadVerified(l.id,true,"");await load();toast({message:"Job verified ✓",type:"success"});}catch(e){toast({message:"Failed",type:"error"});}}} style={{background:"rgba(16,185,129,0.12)",border:"1px solid rgba(16,185,129,0.3)",borderRadius:7,padding:"5px 10px",cursor:"pointer",color:T.green,fontSize:11,fontWeight:600}}>✓ Verify</button>
+                        <button onClick={async()=>{const note=window.prompt("Dispute reason (will be shown to contractor):");if(note===null)return;try{await db.markLeadVerified(l.id,false,note);await load();toast({message:"Job disputed",type:"warning"});}catch(e){toast({message:"Failed",type:"error"});}}} style={{background:"rgba(239,68,68,0.08)",border:"1px solid rgba(239,68,68,0.25)",borderRadius:7,padding:"5px 10px",cursor:"pointer",color:T.red,fontSize:11,fontWeight:600}}>✗ Dispute</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{fontSize:11,color:T.muted,marginTop:8,lineHeight:1.6}}>Verify each job before invoicing. Disputed jobs are flagged and removed from the invoice. Contractors are notified of disputes.</div>
+            </div>
+          )}
+
           <div style={{marginBottom:20}}>
             <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:10}}>
               Contractors — {byContractor.filter(c=>c.unbilled.length>0).length} need invoicing
@@ -3020,7 +3201,12 @@ function AdminInvoicing({contractors,toast}){
                           <div style={{color:T.muted}}>{l.completed_at?new Date(l.completed_at).toLocaleDateString():"—"}</div>
                           <div style={{fontFamily:"'JetBrains Mono',monospace",color:l.job_value?T.green:T.muted}}>{l.job_value?`$${Number(l.job_value).toLocaleString()}`:"—"}</div>
                           <div style={{fontFamily:"'JetBrains Mono',monospace",color:T.amber}}>${c.perfFee}</div>
-                          <div>{l.billed?<span style={{fontSize:10,background:"rgba(245,158,11,0.12)",color:T.amber,border:"1px solid rgba(245,158,11,0.25)",borderRadius:4,padding:"2px 7px",fontWeight:600}}>Billed</span>:<span style={{fontSize:10,background:"rgba(16,185,129,0.1)",color:T.green,border:"1px solid rgba(16,185,129,0.25)",borderRadius:4,padding:"2px 7px",fontWeight:600}}>Unbilled</span>}</div>
+                          <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                            {l.billed?<span style={{fontSize:10,background:"rgba(245,158,11,0.12)",color:T.amber,border:"1px solid rgba(245,158,11,0.25)",borderRadius:4,padding:"2px 7px",fontWeight:600}}>Billed</span>:<span style={{fontSize:10,background:"rgba(16,185,129,0.1)",color:T.green,border:"1px solid rgba(16,185,129,0.25)",borderRadius:4,padding:"2px 7px",fontWeight:600}}>Unbilled</span>}
+                            {l.verified===true&&<span style={{fontSize:10,background:"rgba(16,185,129,0.1)",color:T.green,border:"1px solid rgba(16,185,129,0.2)",borderRadius:4,padding:"2px 7px"}}>✓ Verified</span>}
+                            {l.verified===false&&<span style={{fontSize:10,background:"rgba(239,68,68,0.1)",color:T.red,border:"1px solid rgba(239,68,68,0.2)",borderRadius:4,padding:"2px 7px"}} title={l.dispute_note||""}>✗ Disputed</span>}
+                            {(l.verified===null||l.verified===undefined)&&<span style={{fontSize:10,background:"rgba(245,158,11,0.08)",color:T.amber,border:"1px solid rgba(245,158,11,0.15)",borderRadius:4,padding:"2px 7px"}}>⏳ Pending</span>}
+                          </div>
                           <div/>
                         </div>
                       ))}
