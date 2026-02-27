@@ -376,7 +376,7 @@ function IntakeForm({onBack}){
       const {score,breakdown,tier}=scoreLeadData(form);
       // business_id hardcoded to demo business — in production this comes from the ad campaign param
       const lead = {
-        business_id: null, // public submission — RLS allows this
+        business_id: "185446cc-87a1-4508-a1da-63117aeaa7f2", // public submission — RLS allows this
         name: form.name,
         phone: form.phone,
         email: form.email,
