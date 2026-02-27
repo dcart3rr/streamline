@@ -38,6 +38,7 @@ gs.textContent = `
   @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(0.8)}}
   @keyframes slideUp{from{transform:translateY(100%);opacity:0}to{transform:translateY(0);opacity:1}}
   @keyframes chatPop{from{opacity:0;transform:translateY(12px) scale(0.96)}to{opacity:1;transform:translateY(0) scale(1)}}
+  @keyframes badgeFadeIn{0%{opacity:0;transform:translateY(4px)}20%,80%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-4px)}}
   @keyframes typingDot{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}}
   @keyframes spin{to{transform:rotate(360deg)}}
   @media(max-width:768px){
@@ -955,7 +956,7 @@ function CRMExport({leads, user, toast}){
   );
 }
 
-// 2. Dedicated Account Manager (Growth only)
+// 2. Dedicated Account Manager (Growth only) — shows admin who onboarded the contractor
 function AccountManager({user}){
   const isGrowth = user.plan === "Growth";
   if(!isGrowth) return(
@@ -967,34 +968,43 @@ function AccountManager({user}){
       </div>
     </div>
   );
+
+  const amName  = user.onboarding_admin_name  || "Streamline Team";
+  const amEmail = user.onboarding_admin_email || "hello@streamline.io";
+  const initials = amName.split(" ").map(w=>w[0]||"").join("").slice(0,2).toUpperCase();
+  const palettes = [["#7C3AED","#A78BFA"],["#0369A1","#38BDF8"],["#065F46","#34D399"],["#92400E","#FCD34D"],["#9D174D","#F9A8D4"]];
+  const [g1,g2] = palettes[amName.charCodeAt(0)%palettes.length];
+  const firstName = amName.split(" ")[0];
+
   return(
     <div style={{background:T.surface,border:`1px solid rgba(167,139,250,0.3)`,borderRadius:12,padding:"18px 20px"}}>
       <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:"#A78BFA",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:12}}>Your Account Manager</div>
       <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:16}}>
-        <div style={{width:48,height:48,borderRadius:"50%",background:"linear-gradient(135deg,#7C3AED,#A78BFA)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:700,color:"white",flexShrink:0}}>DS</div>
+        <div style={{width:48,height:48,borderRadius:"50%",background:`linear-gradient(135deg,${g1},${g2})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:700,color:"white",flexShrink:0,letterSpacing:1}}>{initials}</div>
         <div>
-          <div style={{fontSize:15,fontWeight:700,color:T.white,marginBottom:2}}>Derek S.</div>
-          <div style={{fontSize:12,color:T.muted}}>Growth Account Manager · Streamline</div>
+          <div style={{fontSize:15,fontWeight:700,color:T.white,marginBottom:2}}>{amName}</div>
+          <div style={{fontSize:12,color:T.muted}}>Account Manager · Streamline</div>
+          <div style={{fontSize:11,color:"#A78BFA",marginTop:2}}>Onboarded your account</div>
         </div>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
         {[
-          {icon:"📧",label:"Email",value:"derek@streamline.io",href:"mailto:derek@streamline.io"},
-          {icon:"📞",label:"Direct line",value:"(614) 555-0190",href:"tel:6145550190"},
-          {icon:"📅",label:"Book a call",value:"15 or 30 min slots",href:"mailto:derek@streamline.io?subject=Book a call"},
+          {icon:"📧",label:"Email",value:amEmail,href:`mailto:${amEmail}`},
+          {icon:"📅",label:"Book a call",value:"15 or 30 min",href:`mailto:${amEmail}?subject=Book a call — ${user.company||user.email}`},
           {icon:"💬",label:"Response time",value:"Within 4 business hours",href:null},
+          {icon:"📞",label:"Support",value:"hello@streamline.io",href:"mailto:hello@streamline.io"},
         ].map(c=>(
           <div key={c.label} style={{background:T.surface2,borderRadius:8,padding:"10px 12px"}}>
             <div style={{fontSize:10,color:T.muted,marginBottom:3}}>{c.icon} {c.label}</div>
             {c.href
-              ?<a href={c.href} style={{fontSize:12,color:"#A78BFA",fontWeight:500,textDecoration:"none"}}>{c.value}</a>
+              ?<a href={c.href} style={{fontSize:12,color:"#A78BFA",fontWeight:500,textDecoration:"none",wordBreak:"break-all"}}>{c.value}</a>
               :<div style={{fontSize:12,color:T.offWhite,fontWeight:500}}>{c.value}</div>
             }
           </div>
         ))}
       </div>
       <div style={{background:"rgba(167,139,250,0.08)",border:"1px solid rgba(167,139,250,0.2)",borderRadius:8,padding:"10px 12px",fontSize:12,color:T.offWhite,lineHeight:1.6}}>
-        Derek can help with: campaign strategy, ad URL setup, reviewing your close rate, troubleshooting, or anything else you need to get more out of Streamline.
+        {firstName} knows your account and can help with campaign strategy, close rate reviews, lead quality issues, or anything else you need.
       </div>
     </div>
   );
@@ -1006,12 +1016,37 @@ function SeasonalBoosts({user, toast}){
   const month = new Date().getMonth(); // 0=Jan
   const currentSeason = month>=2&&month<=4?"spring":month>=5&&month<=7?"summer":month>=8&&month<=10?"fall":"winter";
 
-  const campaigns = [
-    {id:"spring_hvac",season:"spring",name:"Spring AC Tune-Up Push",months:"Mar–May",icon:"🌸",industry:"HVAC",desc:"Pre-season AC checkups and system replacements surge in spring. Boosted placement in routing queue.",active:currentSeason==="spring"},
-    {id:"summer_hvac",season:"summer",name:"Summer Emergency AC",months:"Jun–Aug",icon:"☀️",industry:"HVAC",desc:"Emergency AC repair leads peak in summer heat. Priority emergency routing enabled.",active:currentSeason==="summer"},
-    {id:"fall_roofing",season:"fall",name:"Fall Roof & Gutter Season",months:"Sep–Nov",icon:"🍂",industry:"Roofing",desc:"Post-summer inspection and storm-season prep drives high-value roofing requests.",active:currentSeason==="fall"},
-    {id:"winter_plumbing",season:"winter",name:"Winter Pipe & Heating",months:"Dec–Feb",icon:"❄️",industry:"Plumbing",desc:"Frozen pipes, heating failures, and emergency plumbing surges in winter months.",active:currentSeason==="winter"},
-  ];
+  // All campaigns per industry
+  const ALL_CAMPAIGNS = {
+    HVAC:[
+      {id:"spring_hvac",season:"spring",name:"Spring AC Tune-Up Rush",months:"Mar–May",icon:"🌸",desc:"Pre-season AC checkups and system replacements surge. Boosted placement in routing queue.",active:currentSeason==="spring"},
+      {id:"summer_hvac",season:"summer",name:"Summer Emergency AC",months:"Jun–Aug",icon:"☀️",desc:"Emergency AC repair leads peak in summer heat. Priority emergency routing enabled.",active:currentSeason==="summer"},
+      {id:"fall_hvac",season:"fall",name:"Fall Furnace Prep Season",months:"Sep–Nov",icon:"🍂",desc:"Heating system checkups and furnace replacements before winter. High close-rate window.",active:currentSeason==="fall"},
+      {id:"winter_hvac",season:"winter",name:"Winter Heating Emergencies",months:"Dec–Feb",icon:"❄️",desc:"Furnace failures and emergency heating calls spike in cold months.",active:currentSeason==="winter"},
+    ],
+    Roofing:[
+      {id:"spring_roof",season:"spring",name:"Spring Storm Damage Push",months:"Mar–May",icon:"🌸",desc:"Post-winter inspection and storm damage claims drive high-value roofing leads.",active:currentSeason==="spring"},
+      {id:"summer_roof",season:"summer",name:"Summer Replacement Season",months:"Jun–Aug",icon:"☀️",desc:"Peak season for full roof replacements. Longer days mean faster installs.",active:currentSeason==="summer"},
+      {id:"fall_roof",season:"fall",name:"Fall Roof & Gutter Season",months:"Sep–Nov",icon:"🍂",desc:"Gutter cleaning, pre-winter inspections, and storm-season prep.",active:currentSeason==="fall"},
+      {id:"winter_roof",season:"winter",name:"Winter Emergency Repairs",months:"Dec–Feb",icon:"❄️",desc:"Ice damming, leak emergencies, and storm damage keep demand active.",active:currentSeason==="winter"},
+    ],
+    Plumbing:[
+      {id:"spring_plumb",season:"spring",name:"Spring Remodel Season",months:"Mar–May",icon:"🌸",desc:"Kitchen and bathroom remodel leads surge as homeowners plan spring projects.",active:currentSeason==="spring"},
+      {id:"summer_plumb",season:"summer",name:"Summer Water & Drain Push",months:"Jun–Aug",icon:"☀️",desc:"Outdoor faucets, irrigation, and slow drain issues peak in summer.",active:currentSeason==="summer"},
+      {id:"fall_plumb",season:"fall",name:"Fall Drain & Water Heater",months:"Sep–Nov",icon:"🍂",desc:"Water heater replacements and pre-winter drain prep drive fall volume.",active:currentSeason==="fall"},
+      {id:"winter_plumb",season:"winter",name:"Winter Pipe & Heating",months:"Dec–Feb",icon:"❄️",desc:"Frozen pipes, burst emergencies, and heating failures surge in cold months.",active:currentSeason==="winter"},
+    ],
+    Electrical:[
+      {id:"spring_elec",season:"spring",name:"Spring Smart Home Installs",months:"Mar–May",icon:"🌸",desc:"EV charger installs and smart home upgrades spike as homeowners plan improvements.",active:currentSeason==="spring"},
+      {id:"summer_elec",season:"summer",name:"Summer Panel & AC Load",months:"Jun–Aug",icon:"☀️",desc:"Panel upgrades to support new AC and high-demand appliances peak in summer.",active:currentSeason==="summer"},
+      {id:"fall_elec",season:"fall",name:"Fall Safety Inspection Push",months:"Sep–Nov",icon:"🍂",desc:"Pre-winter safety inspections, panel audits, and outdoor lighting installs.",active:currentSeason==="fall"},
+      {id:"winter_elec",season:"winter",name:"Winter Holiday Lighting",months:"Dec–Feb",icon:"❄️",desc:"Dedicated circuits, generator installs, and holiday lighting wiring jobs surge.",active:currentSeason==="winter"},
+    ],
+  };
+  const ind = user.industry || "HVAC";
+  // Match industry to key (case-insensitive prefix match)
+  const indKey = Object.keys(ALL_CAMPAIGNS).find(k=>ind.toLowerCase().startsWith(k.toLowerCase())) || "HVAC";
+  const campaigns = ALL_CAMPAIGNS[indKey];
 
   if(!isGrowth) return(
     <div style={{background:"rgba(167,139,250,0.06)",border:"1px solid rgba(167,139,250,0.2)",borderRadius:12,padding:"18px 20px",display:"flex",alignItems:"center",gap:14}}>
@@ -1023,7 +1058,7 @@ function SeasonalBoosts({user, toast}){
     </div>
   );
 
-  const activeCampaign = campaigns.find(c=>c.active&&c.industry===user.industry);
+  const activeCampaign = campaigns.find(c=>c.active);
 
   return(
     <div style={{background:T.surface,border:`1px solid rgba(167,139,250,0.3)`,borderRadius:12,padding:"18px 20px"}}>
@@ -1043,7 +1078,7 @@ function SeasonalBoosts({user, toast}){
             <span style={{fontSize:18,flexShrink:0}}>{c.icon}</span>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:13,fontWeight:600,color:c.active?T.green:T.offWhite,marginBottom:1}}>{c.name}</div>
-              <div style={{fontSize:11,color:T.muted}}>{c.months} · {c.industry}</div>
+              <div style={{fontSize:11,color:T.muted}}>{c.months}</div>
             </div>
             <div>
               {c.active
@@ -1568,13 +1603,13 @@ function Dashboard({user,onLogout}){
         <button onClick={()=>setShowNotifs(true)} style={{position:"relative",background:"none",border:"none",cursor:"pointer",color:T.muted,fontSize:17,padding:6,borderRadius:7,display:"flex",alignItems:"center"}}>
           🔔{unread>0&&<div style={{position:"absolute",top:0,right:0,width:14,height:14,borderRadius:"50%",background:T.red,fontSize:8,fontWeight:700,color:"white",display:"flex",alignItems:"center",justifyContent:"center"}}>{unread}</div>}
         </button>
-        <div style={{display:"flex",alignItems:"center",gap:6}}>
-          <div style={{width:28,height:28,borderRadius:"50%",background:T.blue,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700}}>{currentUser.company?.[0]||currentUser.email?.[0]?.toUpperCase()||"U"}</div>
+        <button onClick={()=>setView("settings")} title="Go to Settings" style={{display:"flex",alignItems:"center",gap:6,background:"none",border:"none",cursor:"pointer",padding:"4px 6px",borderRadius:8,transition:"background 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background=T.surface2} onMouseLeave={e=>e.currentTarget.style.background="none"}>
+          <div style={{width:28,height:28,borderRadius:"50%",background:T.blue,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,flexShrink:0}}>{currentUser.company?.[0]||currentUser.email?.[0]?.toUpperCase()||"U"}</div>
           <div className="hide-mobile">
             <div style={{fontSize:12,fontWeight:500,color:T.white,lineHeight:1.2}}>{currentUser.company||"My Business"}</div>
             <div style={{fontSize:10,color:T.muted}}>{currentUser.plan||"Starter"} plan</div>
           </div>
-        </div>
+        </button>
         <Btn variant="outline" size="sm" onClick={onLogout} style={{fontSize:12,padding:"6px 10px"}}>Sign Out</Btn>
       </div>
     </nav>
@@ -2191,6 +2226,57 @@ function LandingFAQ(){
   </div>;
 }
 
+// ─── ROTATING HERO BADGE ──────────────────────────────────────────────────────
+function HeroBadge(){
+  const items = [
+    {label:"HVAC",       color:"#38BDF8", dot:"#38BDF8"},
+    {label:"Roofing",    color:"#F59E0B", dot:"#F59E0B"},
+    {label:"Plumbing",   color:"#10B981", dot:"#10B981"},
+    {label:"Electrical", color:"#A78BFA", dot:"#A78BFA"},
+  ];
+  const [idx, setIdx] = useState(0);
+  const [visible, setVisible] = useState(true);
+
+  useEffect(()=>{
+    // Each item shows for 2.4s total: 0.4s in, 1.6s hold, 0.4s out
+    const HOLD = 2400;
+    const FADE = 400;
+    let t1, t2;
+    const cycle = () => {
+      // start fade-out
+      setVisible(false);
+      t1 = setTimeout(()=>{
+        setIdx(i=>(i+1)%items.length);
+        setVisible(true);
+        t2 = setTimeout(cycle, HOLD);
+      }, FADE);
+    };
+    t2 = setTimeout(cycle, HOLD);
+    return ()=>{ clearTimeout(t1); clearTimeout(t2); };
+  },[]);
+
+  const cur = items[idx];
+  return(
+    <div style={{height:32,display:"flex",alignItems:"center",justifyContent:"center",marginBottom:24}}>
+      <div style={{
+        display:"inline-flex",alignItems:"center",gap:8,
+        background:`${cur.color}18`,border:`1px solid ${cur.color}50`,
+        borderRadius:100,padding:"6px 18px",
+        fontSize:11,fontWeight:600,color:cur.color,
+        letterSpacing:"0.07em",textTransform:"uppercase",
+        opacity:visible?1:0,
+        transform:visible?"translateY(0)":"translateY(4px)",
+        transition:"opacity 0.4s ease, transform 0.4s ease",
+        whiteSpace:"nowrap",
+      }}>
+        <div style={{width:5,height:5,background:cur.dot,borderRadius:"50%",animation:"pulse 2s infinite",flexShrink:0}}/>
+        Now accepting — {cur.label}
+      </div>
+    </div>
+  );
+}
+
+
 function LandingPage({onLogin,onIntakeForm,onApply,onIndustry}){
   const [showAuth,setShowAuth]=useState(false);
   const [mobileNav,setMobileNav]=useState(false);
@@ -2240,9 +2326,7 @@ function LandingPage({onLogin,onIntakeForm,onApply,onIndustry}){
       <div style={{position:"absolute",width:200,height:200,borderRadius:"50%",background:"radial-gradient(circle,rgba(6,182,212,0.07),transparent 70%)",bottom:"20%",right:"8%",pointerEvents:"none"}}/>
 
       <div style={{maxWidth:700,position:"relative",zIndex:1,width:"100%",margin:"0 auto"}}>
-        <div style={{display:"inline-flex",alignItems:"center",gap:8,background:"rgba(37,99,235,0.12)",border:"1px solid rgba(37,99,235,0.3)",borderRadius:100,padding:"6px 16px",fontSize:11,fontWeight:600,color:T.blueL,letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:24}}>
-          <div style={{width:5,height:5,background:T.blueL,borderRadius:"50%",animation:"pulse 2s infinite"}}/>Now accepting — Columbus, OH
-        </div>
+        <HeroBadge/>
         <h1 style={{fontFamily:"'DM Serif Display',serif",fontSize:"clamp(38px,7vw,70px)",lineHeight:1.05,letterSpacing:"-0.03em",marginBottom:18}}>
           Stop chasing leads.<br/>Start closing{" "}
           <em style={{fontStyle:"italic",background:`linear-gradient(135deg,${T.blueL},${T.cyan})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>jobs.</em>
@@ -2712,7 +2796,7 @@ const CRM_STAGES=[
   {id:"churned",  label:"Churned",         color:T.red,    icon:"❌", desc:"Left or didn't convert"},
 ];
 
-function ApplicationDetail({app,onClose,onStageChange,onDelete,contractors,toast}){
+function ApplicationDetail({app,onClose,onStageChange,onDelete,contractors,toast,adminUser}){
   const [stage,setStage]=useState(app.stage||"new");
   const [notes,setNotes]=useState(app.admin_notes||"");
   const [saving,setSaving]=useState(false);
@@ -2742,11 +2826,14 @@ function ApplicationDetail({app,onClose,onStageChange,onDelete,contractors,toast
       if(error)throw error;
       const uid=data.user?.id;
       if(!uid)throw new Error("Failed to create account");
+      const adminName=adminUser?.user_metadata?.full_name||adminUser?.email?.split("@")[0]||"Streamline Team";
       await dbAdmin.upsertContractorProfile({
         id:uid,email:app.email,company:app.company,
         phone:app.phone,city:app.city,industry:app.industry,
         plan:"Starter",notify_email:app.email,
         notes:`Converted from application. ${app.why_interested||""}`,
+        onboarding_admin_email:adminUser?.email||"hello@streamline.io",
+        onboarding_admin_name:adminName,
       });
       await db.updateApplicationStage(app.id,"customer",notes);
       onStageChange(app.id,"customer",notes);
@@ -2833,7 +2920,7 @@ function ApplicationDetail({app,onClose,onStageChange,onDelete,contractors,toast
   );
 }
 
-function ContractorCRM({contractors,toast}){
+function ContractorCRM({contractors,toast,adminUser}){
   const [apps,setApps]=useState([]);
   const [loading,setLoading]=useState(true);
   const [selected,setSelected]=useState(null);
@@ -2947,6 +3034,7 @@ function ContractorCRM({contractors,toast}){
         onDelete={deleteApp}
         contractors={contractors}
         toast={toast}
+        adminUser={adminUser}
       />}
     </div>
   );
@@ -4127,7 +4215,7 @@ function AdminDashboard({ adminUser, onLogout }) {
 
       <div style={{ flex: 1, padding: "24px", width: "100%", maxWidth: 1400, margin: "0 auto" }}>
         {activeTab === "pipeline" ? (
-          <ContractorCRM contractors={contractors} toast={showToast}/>
+          <ContractorCRM contractors={contractors} toast={showToast} adminUser={adminUser}/>
         ) : activeTab === "invoicing" ? (
           <AdminInvoicing contractors={contractors} toast={showToast}/>
         ) : activeTab === "billing" ? (
