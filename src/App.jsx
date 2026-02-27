@@ -1345,7 +1345,7 @@ function Dashboard({user,onLogout}){
                 {label:"Close Rate",value:`${monthCloseRate}%`,color:T.green},
                 {label:"Contact Rate",value:`${contactRate}%`,color:T.amber},
                 {label:"Avg Score",value:monthAvgScore,color:T.amber},
-              ].map((s,i)=><div key={s.label} style={{display:"flex",alignItems:"center",gap:16,paddingLeft:i>0?20:0,borderLeft:i>0:`1px solid ${T.border}`:0,marginLeft:i>0?4:0}}>
+              ].map((s,i)=><div key={s.label} style={{display:"flex",alignItems:"center",gap:16,paddingLeft:i>0?20:0,borderLeft:i>0?"1px solid rgba(255,255,255,0.07)":"none",marginLeft:i>0?4:0}}>
                 <div>
                   <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:16,fontWeight:700,color:s.color,lineHeight:1}}>{s.value}</div>
                   <div style={{fontSize:10,color:T.muted,marginTop:2}}>{s.label}</div>
