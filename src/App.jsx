@@ -25,7 +25,8 @@ fontLink.href = "https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@
 document.head.appendChild(fontLink);
 const gs = document.createElement("style");
 gs.textContent = `
-  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;user-select:none;-webkit-user-select:none}
+  input,textarea{user-select:text;-webkit-user-select:text}
   html{min-height:100%;scroll-behavior:smooth}
   body{min-height:100%;width:100%}
   #root{min-height:100%;width:100%;display:block;position:relative}
@@ -127,6 +128,24 @@ const INDUSTRIES = {
     ],
     estimates:{"panel_upgrade":"$1,500–$4,000","outlet_repair":"$100–$400","wiring":"$500–$3,000","lighting":"$150–$800","ev_charger":"$400–$1,200","ceiling_fan":"$100–$350","generator":"$3,000–$8,000","safety_inspection":"$150–$350","smart_home":"$500–$3,000"},
   },
+  education:{
+    label:"Beauty Trades",icon:"💅",color:"#F472B6",
+    headline:"Get a Free Beauty Services Quote",
+    subline:"Cosmetology, esthetics, nail care, and more — connect with a licensed local beauty professional today.",
+    issueTypes:[
+      {value:"cosmetology",label:"Cosmetology / Hair Services"},
+      {value:"esthetics",label:"Esthetics / Skin Care"},
+      {value:"nail_care",label:"Nail Care / Nail Art"},
+      {value:"lash_brow",label:"Lash & Brow Services"},
+      {value:"waxing",label:"Waxing / Hair Removal"},
+      {value:"makeup",label:"Makeup / Special Occasion"},
+      {value:"massage",label:"Massage Therapy"},
+      {value:"beauty_school",label:"Beauty School / Training Program"},
+      {value:"salon_suite",label:"Salon Suite Rental Inquiry"},
+      {value:"other",label:"Other Beauty Service"},
+    ],
+    estimates:{"cosmetology":"$40–$200/visit","esthetics":"$60–$180/session","nail_care":"$30–$100/visit","lash_brow":"$50–$150/session","waxing":"$20–$120/session","makeup":"$75–$300/event","massage":"$60–$150/hr","beauty_school":"$5,000–$20,000/program","salon_suite":"$200–$600/week"},
+  },
 };
 
 function getIndustryFromURL(){
@@ -137,6 +156,7 @@ function getIndustryFromURL(){
   if(raw.includes("plumb")) return "plumbing";
   if(raw.includes("elec")) return "electrical";
   if(raw.includes("hvac")||raw.includes("heat")||raw.includes("cool")||raw.includes("ac")) return "hvac";
+  if(raw.includes("edu")||raw.includes("tutor")||raw.includes("school")||raw.includes("lesson")) return "education";
   return null;
 }
 
@@ -448,8 +468,8 @@ const CHAT_RULES = [
     reply: () => "You're notified the moment a new lead is assigned to you:\n\n› **In-app notification** — bell icon lights up in your dashboard\n› **Email alert** — sent to your registered email address\n\nSMS notifications via Twilio are on our roadmap for later this year." },
 
   // Industries / what trades
-  { match: m => /(industr|trade|hvac|roofing|plumbing|electrical|what.*(serve|support|cover|offer)|which.*(trade|industr|business))/.test(m),
-    reply: () => "We currently serve four trades in the **Columbus, OH metro area**:\n\n› 🌬️ **HVAC** — AC repair, replacement, heating, duct work\n› 🏠 **Roofing** — repair, replacement, gutters, storm damage\n› 🔧 **Plumbing** — leaks, drains, water heaters, remodels\n› ⚡ **Electrical** — panels, wiring, EV chargers, smart home\n\nMore trades and cities launching throughout 2026. Email hello@streamline.io to get on the waitlist for your area." },
+  { match: m => /(industr|trade|hvac|roofing|plumbing|electrical|educat|tutor|lesson|what.*(serve|support|cover|offer)|which.*(trade|industr|business))/.test(m),
+    reply: () => "We serve **five industries** in the **Columbus, OH metro area**:\n\n› 🌬️ **HVAC** — AC repair, replacement, heating, duct work\n› 🏠 **Roofing** — repair, replacement, gutters, storm damage\n› 🔧 **Plumbing** — leaks, drains, water heaters, remodels\n› ⚡ **Electrical** — panels, wiring, EV chargers, smart home\n› 💅 **Beauty Trades** — cosmetology, esthetics, nail care, lash & brow\n\nMore cities launching throughout 2026. Email hello@streamline.io to get on the waitlist for your area." },
 
   // Location / cities / areas
   { match: m => /(location|city|cities|area|where|columbus|ohio|oh|region|market|expand|available in|do you serve)/.test(m),
@@ -1058,6 +1078,12 @@ function SeasonalBoosts({user, toast}){
       {id:"fall_elec",season:"fall",name:"Fall Safety Inspection Push",months:"Sep–Nov",icon:"🍂",desc:"Pre-winter safety inspections, panel audits, and outdoor lighting installs.",active:currentSeason==="fall"},
       {id:"winter_elec",season:"winter",name:"Winter Holiday Lighting",months:"Dec–Feb",icon:"❄️",desc:"Dedicated circuits, generator installs, and holiday lighting wiring jobs surge.",active:currentSeason==="winter"},
     ],
+    "Beauty Trades":[
+      {id:"spring_beauty",season:"spring",name:"Spring Wedding & Prom Season",months:"Mar–May",icon:"🌸",desc:"Bridal, prom, and special occasion bookings surge. High-value appointments and loyal rebooking.",active:currentSeason==="spring"},
+      {id:"summer_beauty",season:"summer",name:"Summer Glow-Up Season",months:"Jun–Aug",icon:"☀️",desc:"Skin care, waxing, and nail demand peaks. Clients invest in appearance for vacations and events.",active:currentSeason==="summer"},
+      {id:"fall_beauty",season:"fall",name:"Fall Refresh & Back-to-Routine",months:"Sep–Nov",icon:"🍂",desc:"Clients return from summer and re-establish service routines. Consistent appointment volume.",active:currentSeason==="fall"},
+      {id:"winter_beauty",season:"winter",name:"Holiday Party & Gift Season",months:"Dec–Feb",icon:"❄️",desc:"Holiday events and gift cards drive beauty bookings. High frequency of new client first visits.",active:currentSeason==="winter"},
+    ],
   };
   const ind = user.industry || "HVAC";
   // Match industry to key (case-insensitive prefix match)
@@ -1599,7 +1625,7 @@ function Dashboard({user,onLogout}){
   const sc={new:leads.filter(l=>l.status==="new").length,contacted:leads.filter(l=>l.status==="contacted").length,won,lost:leads.filter(l=>l.status==="lost").length};
   const hotCount=leads.filter(l=>l.tier==="hot").length;
 
-  const TABS=[{id:"pipeline",label:"Pipeline",icon:"⚡"},{id:"analytics",label:"Analytics",icon:"📊"},{id:"earnings",label:"Earnings",icon:"💰"},{id:"goals",label:"Goals",icon:"🎯"},{id:"resources",label:"Resources",icon:"📚"},{id:"settings",label:"Settings",icon:"⚙️"}];
+  const TABS=[{id:"pipeline",label:"Pipeline",icon:"⚡"},{id:"analytics",label:"Analytics",icon:"📊"},{id:"earnings",label:"Earnings",icon:"💰"},{id:"goals",label:"Goals",icon:"🎯"},{id:"market",label:"Market",icon:"🌐"},{id:"advisor",label:"AI Advisor",icon:"✦"},{id:"resources",label:"Resources",icon:"📚"},{id:"settings",label:"Settings",icon:"⚙️"}];
 
   return <div style={{minHeight:"100vh",background:T.bg,display:"flex",flexDirection:"column",width:"100%"}}>
     {/* NAV */}
@@ -1819,6 +1845,10 @@ function Dashboard({user,onLogout}){
         <EarningsView leads={leads} user={currentUser}/>
       ):view==="goals"?(
         <GoalsView leads={leads} user={currentUser} toast={showToast}/>
+      ):view==="market"?(
+        <MarketIntelligenceView user={currentUser}/>
+      ):view==="advisor"?(
+        <AIAdvisorView user={currentUser} leads={leads}/>
       ):view==="resources"?(
         <ResourcesView user={currentUser}/>
       ):(
@@ -1864,7 +1894,7 @@ function ContractorApplicationForm({onBack}){
   }));
 
   const LEAD_SOURCES=["HomeAdvisor","Angi","Thumbtack","Bark.com","Google Ads","Facebook Ads","Referrals","Door knocking","Yard signs","Nextdoor","Yelp","Other"];
-  const INDUSTRIES=["HVAC","Roofing","Plumbing","Electrical","Landscaping","Pest Control","Cleaning","Other"];
+  const INDUSTRIES=["HVAC","Roofing","Plumbing","Electrical","Education (Beauty Trades)","Landscaping","Pest Control","Cleaning","Other"];
   const REVENUE_BANDS=["Under $10k/mo","$10k–$25k/mo","$25k–$50k/mo","$50k–$100k/mo","$100k+/mo","Prefer not to say"];
   const TEAM_SIZES=["Just me","2–5","6–10","11–25","25+"];
   const YEARS=["Less than 1 year","1–3 years","3–5 years","5–10 years","10+ years"];
@@ -2127,6 +2157,16 @@ const INDUSTRY_DETAIL = {
     features:["Panel upgrade vs. outlet vs. EV charger classification","Property ownership captured upfront","Budget tier selection before form completion","Smart home and whole-home generator flagging"],
     quote:{text:"\"EV charger installs are my most profitable jobs. Streamline sends me 2-3 a month and they're all pre-qualified.\"",attr:"Electrical contractor, New Albany OH"},
   },
+  education:{
+    label:"Beauty Trades", icon:"💅", color:"#F472B6",
+    hero:"Beauty Leads From Clients Ready to Book.",
+    sub:"Cosmetologists, estheticians, nail techs, and beauty professionals — get pre-qualified clients delivered exclusively to your chair.",
+    pain:"The beauty industry problem: most professionals rely entirely on word of mouth, Instagram DMs, or generic booking platforms where they compete on price against 50 others in the same zip code.",
+    how:"Our intake captures the service type, occasion or urgency (e.g. wedding, ongoing care), budget, style preferences, and availability. Every client arrives pre-educated on pricing so the conversation starts from trust, not negotiation.",
+    stats:[{n:"$120",l:"avg service value on platform"},{n:"82%",l:"of beauty clients book within 24 hours"},{n:"1",l:"professional per client — always exclusive"},{n:"3.4×",l:"higher rebooking rate vs. cold leads"}],
+    features:["Service type and occasion captured at intake","Budget tier and style preferences pre-screened","Cosmetology, esthetics, nails, lash — issue-specific routing","Beauty school and training inquiry leads flagged separately"],
+    quote:{text:"\"I was relying on Instagram alone. Streamline fills my chair with serious clients who already know my pricing.\"",attr:"Esthetician, Columbus OH"},
+  },
 };
 
 function IndustryPage({industryKey, onBack, onApply}) {
@@ -2255,6 +2295,7 @@ function HeroBadge(){
     {label:"Roofing",    color:"#F59E0B", dot:"#F59E0B"},
     {label:"Plumbing",   color:"#10B981", dot:"#10B981"},
     {label:"Electrical", color:"#A78BFA", dot:"#A78BFA"},
+    {label:"Beauty",     color:"#F472B6", dot:"#F472B6"},
   ];
   const [idx, setIdx] = useState(0);
   const [visible, setVisible] = useState(true);
@@ -2299,6 +2340,24 @@ function HeroBadge(){
 }
 
 
+function PromoBanner({onApply}){
+  const [dismissed,setDismissed]=useState(false);
+  if(dismissed)return null;
+  return(
+    <div style={{position:"fixed",top:0,left:0,right:0,zIndex:300,background:`linear-gradient(90deg,#1E3A5F,${T.blue},#1E3A5F)`,padding:"10px 20px",display:"flex",alignItems:"center",justifyContent:"center",gap:12,flexWrap:"wrap"}}>
+      <div style={{display:"flex",alignItems:"center",gap:8}}>
+        <span style={{fontSize:13,background:"rgba(255,255,255,0.15)",borderRadius:4,padding:"2px 8px",fontWeight:700,fontFamily:"'JetBrains Mono',monospace",letterSpacing:"0.06em",color:"white",flexShrink:0}}>LIMITED TIME</span>
+        <span style={{fontSize:13,color:"white",fontWeight:500}}>First month subscription fee waived — apply before spots fill</span>
+        <span style={{fontSize:12,color:"rgba(255,255,255,0.65)"}}>· No setup fee · No commitment</span>
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginLeft:"auto"}}>
+        <button onClick={onApply} style={{background:"white",color:T.blue,border:"none",borderRadius:6,padding:"5px 14px",fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>Claim Offer →</button>
+        <button onClick={()=>setDismissed(true)} style={{background:"none",border:"none",color:"rgba(255,255,255,0.5)",cursor:"pointer",fontSize:18,lineHeight:1,padding:"0 4px"}} title="Dismiss">×</button>
+      </div>
+    </div>
+  );
+}
+
 function LandingPage({onLogin,onIntakeForm,onApply,onIndustry}){
   const [showAuth,setShowAuth]=useState(false);
   const [mobileNav,setMobileNav]=useState(false);
@@ -2308,8 +2367,9 @@ function LandingPage({onLogin,onIntakeForm,onApply,onIndustry}){
   const navLinks=[["industries","Industries"],["how","How It Works"],["features","Features"],["pricing","Pricing"],["faq","FAQ"]];
 
   return <div style={{background:T.bg,minHeight:"100vh",width:"100%",overflowX:"hidden"}}>
+    <PromoBanner onApply={onApply}/>
     {/* NAV */}
-    <nav style={{position:"fixed",top:0,left:0,right:0,height:60,zIndex:200,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 20px",background:"rgba(9,12,17,0.94)",backdropFilter:"blur(20px)",borderBottom:`1px solid ${T.border}`}}>
+    <nav style={{position:"fixed",top:40,left:0,right:0,height:60,zIndex:200,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 20px",background:"rgba(9,12,17,0.94)",backdropFilter:"blur(20px)",borderBottom:`1px solid ${T.border}`}}>
       <button onClick={()=>window.scrollTo({top:0,behavior:"smooth"})} style={{display:"flex",alignItems:"center",gap:10,background:"none",border:"none",cursor:"pointer"}}>
         <LogoMark size={28}/><span style={{fontFamily:"'DM Serif Display',serif",fontSize:18,color:T.white}}>Streamline</span>
       </button>
@@ -2384,10 +2444,10 @@ function LandingPage({onLogin,onIntakeForm,onApply,onIndustry}){
       <div style={{maxWidth:1200,margin:"0 auto",width:"100%",position:"relative",zIndex:1}}>
         <div style={{textAlign:"center",marginBottom:36}}>
           <SE c="Industries We Serve"/>
-          <SH c="Built for the trades that run on booked jobs." center/>
+          <SH c="Built for service pros who run on booked clients." center/>
           <p style={{color:T.muted,fontSize:14,maxWidth:480,margin:"0 auto"}}>Each industry has its own intake flow, scoring model, and lead type — tailored to how customers actually buy in that market.</p>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14}} className="grid-2-mobile">
+        <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:14}} className="grid-2-mobile">
           {Object.entries(INDUSTRIES).map(([k,v])=>(
             <div key={k} onClick={()=>onIndustry(k)}
               style={{background:T.bg,border:`1px solid ${T.border2}`,borderRadius:16,padding:"28px 20px",cursor:"pointer",transition:"all 0.25s",position:"relative",overflow:"hidden",textAlign:"center"}}
@@ -2396,7 +2456,7 @@ function LandingPage({onLogin,onIntakeForm,onApply,onIndustry}){
               <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:`linear-gradient(90deg,transparent,${v.color},transparent)`,opacity:0.6}}/>
               <div style={{width:56,height:56,borderRadius:"50%",background:`${v.color}15`,border:`1px solid ${v.color}30`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,margin:"0 auto 14px"}}>{v.icon}</div>
               <div style={{fontSize:16,fontWeight:700,marginBottom:8,color:T.white}}>{v.label}</div>
-              <div style={{fontSize:12,color:T.muted,lineHeight:1.6,marginBottom:14}}>{k==="hvac"?"Heating, cooling, and air quality leads with urgency and system type captured.":k==="roofing"?"Storm damage, replacements, and repairs — with scope and budget pre-qualified.":k==="plumbing"?"Emergency and planned jobs, scored by urgency, scope, and property type.":"Panel upgrades, EV chargers, and safety work — pre-qualified and high-value."}</div>
+              <div style={{fontSize:12,color:T.muted,lineHeight:1.6,marginBottom:14}}>{k==="hvac"?"Heating, cooling, and air quality leads with urgency and system type captured.":k==="roofing"?"Storm damage, replacements, and repairs — with scope and budget pre-qualified.":k==="plumbing"?"Emergency and planned jobs, scored by urgency, scope, and property type.":k==="electrical"?"Panel upgrades, EV chargers, and safety work — pre-qualified and high-value.":"Cosmetology, esthetics, nail care, and beauty services — pre-screened clients delivered to your chair."}</div>
               <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5,fontSize:12,color:v.color,fontWeight:600}}>
                 See how it works <span className="ind-arrow" style={{opacity:0,transition:"opacity 0.2s",fontSize:14}}>→</span>
               </div>
@@ -2508,7 +2568,10 @@ function LandingPage({onLogin,onIntakeForm,onApply,onIndustry}){
       <div style={{maxWidth:1200,margin:"0 auto",width:"100%",textAlign:"center",position:"relative",zIndex:1}}>
         <SE c="Pricing"/>
         <SH c="Pay for what works." center/>
-        <p style={{fontSize:14,color:T.offWhite,lineHeight:1.7,fontWeight:300,maxWidth:440,margin:"0 auto 36px"}}>Low monthly base keeps costs predictable. Performance fee only when you close a job.</p>
+        <p style={{fontSize:14,color:T.offWhite,lineHeight:1.7,fontWeight:300,maxWidth:440,margin:"0 auto 16px"}}>Low monthly base keeps costs predictable. Performance fee only when you close a job.</p>
+        <div style={{display:"inline-flex",alignItems:"center",gap:8,background:"rgba(37,99,235,0.1)",border:"1px solid rgba(37,99,235,0.3)",borderRadius:8,padding:"8px 16px",marginBottom:28,fontSize:13,color:T.blueL}}>
+          🎁 <strong>Limited-time offer:</strong> First month subscription free when you apply now.
+        </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,maxWidth:860,margin:"0 auto",alignItems:"stretch"}} className="grid-1-mobile">
           {[
             {plan:"Starter",price:"299",perf:"150",popular:false,features:["Exclusive leads delivered to your dashboard","Intelligent intake and lead scoring","Instant estimate generation for each lead","In-app notifications on every new lead","Win/loss tracking and close rate analytics","Dedicated intake URL for your ads"]},
@@ -2789,6 +2852,7 @@ function ContractorModal({ contractor, onClose, onSave, toast }) {
     { value: "Roofing", label: "Roofing" },
     { value: "Plumbing", label: "Plumbing" },
     { value: "Electrical", label: "Electrical" },
+    { value: "Education", label: "Education (Beauty Trades)" },
   ];
 
   return (
@@ -2839,7 +2903,7 @@ const CRM_STAGES=[
   {id:"churned",  label:"Churned",         color:T.red,    icon:"❌", desc:"Left or didn't convert"},
 ];
 
-function ApplicationDetail({app,onClose,onStageChange,onDelete,contractors,toast,adminUser}){
+function ApplicationDetail({app,onClose,onStageChange,onDelete,contractors,toast,adminUser,onConvert}){
   const [stage,setStage]=useState(app.stage||"new");
   const [notes,setNotes]=useState(app.admin_notes||"");
   const [saving,setSaving]=useState(false);
@@ -2880,7 +2944,8 @@ function ApplicationDetail({app,onClose,onStageChange,onDelete,contractors,toast
       });
       await db.updateApplicationStage(app.id,"customer",notes);
       onStageChange(app.id,"customer",notes);
-      toast({message:`✅ ${app.company} converted to contractor! Temp password: ${tempPw}`,type:"success"});
+      toast({message:`✅ ${app.company} converted to contractor! Temp password: ${tempPw} — switching to Contractors tab`,type:"success"});
+      if(onConvert)onConvert();
       onClose();
     }catch(e){toast({message:e.message||"Conversion failed",type:"error"});}
     setConverting(false);
@@ -2963,7 +3028,7 @@ function ApplicationDetail({app,onClose,onStageChange,onDelete,contractors,toast
   );
 }
 
-function ContractorCRM({contractors,toast,adminUser}){
+function ContractorCRM({contractors,toast,adminUser,onConvert}){
   const [apps,setApps]=useState([]);
   const [loading,setLoading]=useState(true);
   const [selected,setSelected]=useState(null);
@@ -3074,6 +3139,7 @@ function ContractorCRM({contractors,toast,adminUser}){
         app={selected}
         onClose={()=>setSelected(null)}
         onStageChange={(id,stage,notes)=>{updateStage(id,stage,notes);setSelected(s=>s?{...s,stage,admin_notes:notes}:null);}}
+        onConvert={()=>{if(onConvert)onConvert();}}
         onDelete={deleteApp}
         contractors={contractors}
         toast={toast}
@@ -4263,7 +4329,7 @@ function AdminDashboard({ adminUser, onLogout }) {
 
       <div style={{ flex: 1, padding: "24px", width: "100%", maxWidth: 1400, margin: "0 auto" }}>
         {activeTab === "pipeline" ? (
-          <ContractorCRM contractors={contractors} toast={showToast} adminUser={adminUser}/>
+          <ContractorCRM contractors={contractors} toast={showToast} adminUser={adminUser} onConvert={async()=>{await loadContractors();setActiveTab("contractors");}}/>
         ) : activeTab === "invoicing" ? (
           <AdminInvoicing contractors={contractors} toast={showToast}/>
         ) : activeTab === "billing" ? (
@@ -5507,6 +5573,476 @@ function AdminTestSuite({contractors,toast}){
           <div style={{fontSize:13,color:T.muted,maxWidth:400,margin:"0 auto"}}>Click "Run All Tests" to verify your database, lead insertion, routing engine, status updates, and billing tables are all working correctly.</div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── MARKET INTELLIGENCE VIEW (Contractor) ────────────────────────────────────
+// Uses Claude API to pull live market data, competitor landscape, pricing benchmarks,
+// and industry headwinds/tailwinds for the contractor's specific city + industry.
+const MARKET_STORAGE_KEY = (uid) => `market_data_${uid}`;
+
+function MarketIntelligenceView({user}){
+  const [data,setData]=useState(null);
+  const [loading,setLoading]=useState(false);
+  const [error,setError]=useState(null);
+  const [lastUpdated,setLastUpdated]=useState(null);
+  const [activeSection,setActiveSection]=useState("overview");
+
+  const city=user.city||"Columbus, OH";
+  const industry=user.industry||"HVAC";
+  const staleAfterDays=90;
+
+  useEffect(()=>{
+    try{
+      const saved=localStorage.getItem(MARKET_STORAGE_KEY(user.id));
+      if(saved){
+        const parsed=JSON.parse(saved);
+        setData(parsed.data);
+        setLastUpdated(new Date(parsed.ts));
+      }
+    }catch(e){}
+  },[user.id]);
+
+  const isStale=lastUpdated&&(Date.now()-lastUpdated.getTime())>staleAfterDays*24*60*60*1000;
+  const daysSinceUpdate=lastUpdated?Math.floor((Date.now()-lastUpdated.getTime())/(24*60*60*1000)):null;
+
+  const fetchMarketData=async()=>{
+    setLoading(true);setError(null);
+    try{
+      const prompt=`You are a market research analyst. Generate detailed, realistic market intelligence for a ${industry} service professional operating in ${city}.
+
+Return ONLY valid JSON (no markdown, no backticks, no explanation) in exactly this structure:
+{
+  "overview": {
+    "marketSize": "estimated annual market size in dollars (e.g. $180M)",
+    "growthRate": "annual growth rate (e.g. +4.2%)",
+    "avgJobValue": "average job/service value",
+    "demandLevel": "High / Medium / Low",
+    "summary": "2-3 sentence market overview for ${industry} in ${city}"
+  },
+  "competitors": [
+    {"name":"Example Co","type":"Local independent / Regional chain / Franchise / National","notes":"1 sentence on their positioning"},
+    {"name":"Example 2","type":"...","notes":"..."},
+    {"name":"Example 3","type":"...","notes":"..."},
+    {"name":"Example 4","type":"...","notes":"..."},
+    {"name":"Example 5","type":"...","notes":"..."}
+  ],
+  "pricing": [
+    {"service":"Top service type","low":"$X","high":"$Y","avg":"$Z","note":"1 sentence context"},
+    {"service":"Service 2","low":"$X","high":"$Y","avg":"$Z","note":"..."},
+    {"service":"Service 3","low":"$X","high":"$Y","avg":"$Z","note":"..."},
+    {"service":"Service 4","low":"$X","high":"$Y","avg":"$Z","note":"..."},
+    {"service":"Service 5","low":"$X","high":"$Y","avg":"$Z","note":"..."}
+  ],
+  "tailwinds": [
+    {"title":"Trend title","detail":"2 sentence explanation of how this benefits ${industry} professionals"},
+    {"title":"Trend 2","detail":"..."},
+    {"title":"Trend 3","detail":"..."}
+  ],
+  "headwinds": [
+    {"title":"Challenge title","detail":"2 sentence explanation of the challenge and how to navigate it"},
+    {"title":"Challenge 2","detail":"..."},
+    {"title":"Challenge 3","detail":"..."}
+  ],
+  "opportunities": [
+    {"title":"Opportunity","detail":"2 sentences on how to capitalize on this specific to ${city}"},
+    {"title":"Opportunity 2","detail":"..."},
+    {"title":"Opportunity 3","detail":"..."}
+  ],
+  "seasonality": {
+    "peakMonths": "e.g. May–August",
+    "slowMonths": "e.g. January–February",
+    "insight": "1-2 sentences on seasonal patterns specific to ${city} for ${industry}"
+  },
+  "consumerTrends": [
+    "Trend 1 specific to ${city} consumer behavior for ${industry}",
+    "Trend 2",
+    "Trend 3",
+    "Trend 4"
+  ]
+}
+
+Make all data realistic and specific to ${city} and the ${industry} industry. Use actual market knowledge.`;
+
+      const resp=await fetch("https://api.anthropic.com/v1/messages",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          model:"claude-sonnet-4-20250514",
+          max_tokens:1800,
+          messages:[{role:"user",content:prompt}]
+        })
+      });
+      const result=await resp.json();
+      const text=(result.content||[]).map(b=>b.text||"").join("");
+      const clean=text.replace(/```json|```/g,"").trim();
+      const parsed=JSON.parse(clean);
+      setData(parsed);
+      const now=new Date();
+      setLastUpdated(now);
+      localStorage.setItem(MARKET_STORAGE_KEY(user.id),JSON.stringify({data:parsed,ts:now.toISOString()}));
+    }catch(e){
+      setError("Failed to load market data. Please try again.");
+      console.error(e);
+    }
+    setLoading(false);
+  };
+
+  const SECTIONS=[
+    {id:"overview",label:"Overview",icon:"📊"},
+    {id:"competitors",label:"Competitors",icon:"🏆"},
+    {id:"pricing",label:"Pricing",icon:"💲"},
+    {id:"tailwinds",label:"Tailwinds",icon:"🚀"},
+    {id:"headwinds",label:"Headwinds",icon:"⚠️"},
+    {id:"opportunities",label:"Opportunities",icon:"💡"},
+  ];
+
+  const ind=Object.values(INDUSTRIES).find(i=>i.label===industry)||INDUSTRIES.hvac;
+  const indColor=ind?.color||T.blue;
+
+  return(
+    <div style={{animation:"fadeIn 0.3s ease"}}>
+      {/* Header */}
+      <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:24,flexWrap:"wrap",gap:12}}>
+        <div>
+          <h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:"clamp(20px,3vw,26px)",letterSpacing:-0.8,marginBottom:5}}>Market Intelligence</h2>
+          <p style={{color:T.muted,fontSize:13}}>
+            {industry} · {city}
+            {lastUpdated&&<span style={{marginLeft:8,color:isStale?T.amber:T.muted}}>
+              · Last updated {daysSinceUpdate===0?"today":`${daysSinceUpdate}d ago`}
+              {isStale&&" · ⚠ Data is over 90 days old"}
+            </span>}
+          </p>
+        </div>
+        <button onClick={fetchMarketData} disabled={loading} style={{display:"flex",alignItems:"center",gap:8,background:`linear-gradient(135deg,${indColor}22,${indColor}11)`,border:`1px solid ${indColor}50`,borderRadius:10,padding:"10px 18px",cursor:loading?"not-allowed":"pointer",color:indColor,fontSize:13,fontWeight:600,opacity:loading?0.7:1,transition:"all 0.2s"}}>
+          {loading?<><Spinner size={13}/> Analyzing market…</>:<>🔄 {data?"Refresh Data":"Generate Market Report"}</>}
+        </button>
+      </div>
+
+      {!data&&!loading&&(
+        <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:16,padding:56,textAlign:"center"}}>
+          <div style={{fontSize:48,marginBottom:16}}>🔍</div>
+          <div style={{fontFamily:"'DM Serif Display',serif",fontSize:22,marginBottom:10}}>Your market report is ready to generate</div>
+          <p style={{color:T.muted,fontSize:14,maxWidth:460,margin:"0 auto 24px",lineHeight:1.7}}>Get AI-powered market size data, competitor landscape, pricing benchmarks, and industry trends specific to <strong style={{color:T.white}}>{industry}</strong> in <strong style={{color:T.white}}>{city}</strong>.</p>
+          <button onClick={fetchMarketData} style={{background:`linear-gradient(135deg,${indColor},${indColor}cc)`,border:"none",borderRadius:10,padding:"13px 28px",cursor:"pointer",color:"white",fontSize:14,fontWeight:700}}>Generate Market Report →</button>
+          <p style={{color:T.muted,fontSize:11,marginTop:12}}>Powered by AI · Refreshable quarterly · ~15 seconds</p>
+        </div>
+      )}
+
+      {loading&&!data&&(
+        <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:16,padding:56,textAlign:"center"}}>
+          <Spinner size={32}/>
+          <div style={{marginTop:16,fontSize:15,color:T.offWhite}}>Analyzing the {industry} market in {city}…</div>
+          <p style={{color:T.muted,fontSize:13,marginTop:8}}>Pulling competitor data, pricing benchmarks, and industry trends</p>
+        </div>
+      )}
+
+      {error&&<div style={{background:"rgba(239,68,68,0.08)",border:"1px solid rgba(239,68,68,0.25)",borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:13,color:"#F87171"}}>{error}</div>}
+
+      {data&&(
+        <>
+          {/* Section tabs */}
+          <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:20,background:T.surface2,padding:4,borderRadius:10,border:`1px solid ${T.border}`}}>
+            {SECTIONS.map(s=>(
+              <button key={s.id} onClick={()=>setActiveSection(s.id)} style={{padding:"7px 14px",borderRadius:7,border:"none",cursor:"pointer",fontSize:12,fontWeight:500,background:activeSection===s.id?T.blue:"none",color:activeSection===s.id?"white":T.muted,transition:"all 0.15s",display:"flex",alignItems:"center",gap:5}}>
+                <span style={{fontSize:11}}>{s.icon}</span>{s.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Overview */}
+          {activeSection==="overview"&&(
+            <div style={{animation:"fadeIn 0.25s ease"}}>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:20}} className="grid-2-mobile">
+                {[
+                  {label:"Market Size",value:data.overview?.marketSize,color:T.green,icon:"💰"},
+                  {label:"Growth Rate",value:data.overview?.growthRate,color:T.cyan,icon:"📈"},
+                  {label:"Avg Job Value",value:data.overview?.avgJobValue,color:T.amber,icon:"💼"},
+                  {label:"Demand Level",value:data.overview?.demandLevel,color:data.overview?.demandLevel==="High"?T.green:data.overview?.demandLevel==="Medium"?T.amber:T.muted,icon:"🌡️"},
+                ].map(s=>(
+                  <div key={s.label} style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:12,padding:"16px 18px"}}>
+                    <div style={{fontSize:18,marginBottom:8}}>{s.icon}</div>
+                    <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:18,fontWeight:700,color:s.color,lineHeight:1.2,marginBottom:3}}>{s.value||"—"}</div>
+                    <div style={{fontSize:11,color:T.muted}}>{s.label}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:12,padding:20,marginBottom:16}}>
+                <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:10}}>Market Summary</div>
+                <p style={{fontSize:14,color:T.offWhite,lineHeight:1.7}}>{data.overview?.summary}</p>
+              </div>
+              {data.seasonality&&(
+                <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:12,padding:20,marginBottom:16}}>
+                  <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:12}}>Seasonality in {city}</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+                    <div style={{background:"rgba(16,185,129,0.06)",border:"1px solid rgba(16,185,129,0.2)",borderRadius:8,padding:"10px 14px"}}>
+                      <div style={{fontSize:11,color:T.green,fontWeight:600,marginBottom:3}}>Peak Months</div>
+                      <div style={{fontSize:13,fontWeight:600,color:T.white}}>{data.seasonality.peakMonths}</div>
+                    </div>
+                    <div style={{background:"rgba(239,68,68,0.06)",border:"1px solid rgba(239,68,68,0.2)",borderRadius:8,padding:"10px 14px"}}>
+                      <div style={{fontSize:11,color:T.red,fontWeight:600,marginBottom:3}}>Slow Months</div>
+                      <div style={{fontSize:13,fontWeight:600,color:T.white}}>{data.seasonality.slowMonths}</div>
+                    </div>
+                  </div>
+                  <p style={{fontSize:13,color:T.offWhite,lineHeight:1.6}}>{data.seasonality.insight}</p>
+                </div>
+              )}
+              {data.consumerTrends&&(
+                <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:12,padding:20}}>
+                  <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:12}}>Consumer Trends</div>
+                  {data.consumerTrends.map((t,i)=>(
+                    <div key={i} style={{display:"flex",gap:10,padding:"8px 0",borderBottom:i<data.consumerTrends.length-1?`1px solid ${T.border}`:"none"}}>
+                      <span style={{color:indColor,flexShrink:0,marginTop:1}}>›</span>
+                      <span style={{fontSize:13,color:T.offWhite,lineHeight:1.5}}>{t}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Competitors */}
+          {activeSection==="competitors"&&(
+            <div style={{animation:"fadeIn 0.25s ease"}}>
+              <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:14,overflow:"hidden"}}>
+                <div style={{padding:"12px 18px",borderBottom:`1px solid ${T.border}`,fontSize:13,color:T.muted}}>Top competitors in {city} for {industry} — use this to position your pitch</div>
+                {(data.competitors||[]).map((c,i)=>(
+                  <div key={i} style={{padding:"14px 18px",borderBottom:i<data.competitors.length-1?`1px solid ${T.border}`:"none"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:4}}>
+                      <div style={{width:32,height:32,borderRadius:8,background:`${indColor}18`,border:`1px solid ${indColor}30`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,color:indColor,flexShrink:0}}>{i+1}</div>
+                      <div>
+                        <div style={{fontSize:14,fontWeight:600,color:T.white}}>{c.name}</div>
+                        <div style={{fontSize:11,color:T.blueL,fontWeight:500}}>{c.type}</div>
+                      </div>
+                    </div>
+                    <div style={{fontSize:13,color:T.muted,lineHeight:1.5,paddingLeft:42}}>{c.notes}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{marginTop:12,background:"rgba(37,99,235,0.06)",border:"1px solid rgba(37,99,235,0.2)",borderRadius:10,padding:"12px 16px",fontSize:13,color:T.offWhite,lineHeight:1.6}}>
+                💡 Your advantage: every Streamline lead is pre-qualified and exclusive. Your competitors are fighting over shared leads — you aren't.
+              </div>
+            </div>
+          )}
+
+          {/* Pricing */}
+          {activeSection==="pricing"&&(
+            <div style={{animation:"fadeIn 0.25s ease"}}>
+              <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:14,overflow:"hidden"}}>
+                <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 2fr",padding:"10px 18px",borderBottom:`1px solid ${T.border}`,fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.07em"}}>
+                  {["Service","Low","High","Avg","Context"].map(h=><div key={h}>{h}</div>)}
+                </div>
+                {(data.pricing||[]).map((p,i)=>(
+                  <div key={i} style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 2fr",padding:"13px 18px",borderBottom:i<data.pricing.length-1?`1px solid ${T.border}`:"none",alignItems:"center",fontSize:13}}>
+                    <div style={{fontWeight:600,color:T.white}}>{p.service}</div>
+                    <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:T.muted}}>{p.low}</div>
+                    <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:T.muted}}>{p.high}</div>
+                    <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:13,fontWeight:700,color:T.green}}>{p.avg}</div>
+                    <div style={{fontSize:12,color:T.muted,lineHeight:1.4}}>{p.note}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{marginTop:12,fontSize:12,color:T.muted,lineHeight:1.6}}>Market pricing data for {industry} in {city}. Use this to calibrate your estimates and justify your rates to leads who are comparison shopping.</div>
+            </div>
+          )}
+
+          {/* Tailwinds */}
+          {activeSection==="tailwinds"&&(
+            <div style={{animation:"fadeIn 0.25s ease",display:"flex",flexDirection:"column",gap:12}}>
+              {(data.tailwinds||[]).map((t,i)=>(
+                <div key={i} style={{background:T.surface,border:"1px solid rgba(16,185,129,0.25)",borderRadius:12,padding:"18px 20px"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+                    <span style={{fontSize:18}}>🚀</span>
+                    <span style={{fontSize:15,fontWeight:600,color:T.green}}>{t.title}</span>
+                  </div>
+                  <p style={{fontSize:13,color:T.offWhite,lineHeight:1.7,paddingLeft:28}}>{t.detail}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Headwinds */}
+          {activeSection==="headwinds"&&(
+            <div style={{animation:"fadeIn 0.25s ease",display:"flex",flexDirection:"column",gap:12}}>
+              {(data.headwinds||[]).map((h,i)=>(
+                <div key={i} style={{background:T.surface,border:"1px solid rgba(245,158,11,0.25)",borderRadius:12,padding:"18px 20px"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+                    <span style={{fontSize:18}}>⚠️</span>
+                    <span style={{fontSize:15,fontWeight:600,color:T.amber}}>{h.title}</span>
+                  </div>
+                  <p style={{fontSize:13,color:T.offWhite,lineHeight:1.7,paddingLeft:28}}>{h.detail}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Opportunities */}
+          {activeSection==="opportunities"&&(
+            <div style={{animation:"fadeIn 0.25s ease",display:"flex",flexDirection:"column",gap:12}}>
+              {(data.opportunities||[]).map((o,i)=>(
+                <div key={i} style={{background:T.surface,border:`1px solid ${indColor}30`,borderRadius:12,padding:"18px 20px"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+                    <span style={{fontSize:18}}>💡</span>
+                    <span style={{fontSize:15,fontWeight:600,color:indColor}}>{o.title}</span>
+                  </div>
+                  <p style={{fontSize:13,color:T.offWhite,lineHeight:1.7,paddingLeft:28}}>{o.detail}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Footer */}
+          <div style={{marginTop:20,display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11,color:T.muted}}>
+            <span>AI-generated market intelligence · Powered by Claude · Refresh quarterly for accuracy</span>
+            {lastUpdated&&<span>Generated {lastUpdated.toLocaleDateString()}</span>}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── AI BUSINESS ADVISOR (Contractor chat widget) ─────────────────────────────
+function AIAdvisorView({user,leads}){
+  const [messages,setMessages]=useState([
+    {role:"assistant",content:`Hi ${user.company?.split(" ")[0]||"there"}! I'm your Streamline business advisor. I have full context on your pipeline, close rate, and the ${user.industry||"service"} market in ${user.city||"your area"}. Ask me anything — pricing questions, how to handle an objection, what to focus on this month, or what's happening in your market.`}
+  ]);
+  const [input,setInput]=useState("");
+  const [loading,setLoading]=useState(false);
+  const bottomRef=useRef(null);
+  const inputRef=useRef(null);
+
+  useEffect(()=>{bottomRef.current?.scrollIntoView({behavior:"smooth"});},[messages]);
+
+  const won=leads.filter(l=>l.status==="won").length;
+  const total=leads.length;
+  const closeRate=total>0?Math.round((won/total)*100):0;
+  const avgScore=total>0?Math.round(leads.reduce((s,l)=>s+(l.score||0),0)/total):0;
+  const active=leads.filter(l=>l.status==="new"||l.status==="contacted").length;
+  const recentWon=leads.filter(l=>l.status==="won").slice(0,3);
+
+  const SUGGESTED=[
+    "What should I charge for my most common job?",
+    "How do I handle price objections?",
+    "What should I focus on this month?",
+    "How does my close rate compare to market?",
+    "What are the biggest opportunities in my market right now?",
+    "How do I get more Google reviews?",
+  ];
+
+  const send=async(msg)=>{
+    const text=msg||input.trim();
+    if(!text||loading)return;
+    setInput("");
+    const userMsg={role:"user",content:text};
+    setMessages(p=>[...p,userMsg]);
+    setLoading(true);
+
+    const systemPrompt=`You are a sharp, practical business advisor for ${user.company||"this contractor"}, a ${user.industry||"service"} professional in ${user.city||"Columbus, OH"}.
+
+THEIR CURRENT PIPELINE DATA:
+- Total leads: ${total}
+- Won jobs: ${won} (close rate: ${closeRate}%)
+- Active leads: ${active}
+- Average lead score: ${avgScore}/100
+- Plan: ${user.plan||"Starter"}
+- Recent wins: ${recentWon.map(l=>`${l.name} (${l.is_name||l.issue_type}, $${l.job_value||0})`).join(", ")||"none yet"}
+
+You have deep expertise in the ${user.industry||"service"} industry and the ${user.city||"Columbus"} local market.
+Be direct, specific, and actionable. Keep responses concise (3-5 sentences unless detail is needed).
+Reference their actual data when relevant. Don't be generic — be their trusted advisor.`;
+
+    try{
+      const history=messages.map(m=>({role:m.role,content:m.content}));
+      const resp=await fetch("https://api.anthropic.com/v1/messages",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          model:"claude-sonnet-4-20250514",
+          max_tokens:600,
+          system:systemPrompt,
+          messages:[...history,userMsg]
+        })
+      });
+      const result=await resp.json();
+      const reply=(result.content||[]).map(b=>b.text||"").join("")||"I couldn't generate a response. Please try again.";
+      setMessages(p=>[...p,{role:"assistant",content:reply}]);
+    }catch(e){
+      setMessages(p=>[...p,{role:"assistant",content:"Something went wrong connecting to the AI. Please check your network and try again."}]);
+    }
+    setLoading(false);
+    setTimeout(()=>inputRef.current?.focus(),100);
+  };
+
+  const ind=Object.values(INDUSTRIES).find(i=>i.label===user.industry)||INDUSTRIES.hvac;
+  const indColor=ind?.color||T.blue;
+
+  return(
+    <div style={{animation:"fadeIn 0.3s ease",display:"flex",flexDirection:"column",height:"calc(100vh - 160px)",minHeight:500}}>
+      <div style={{marginBottom:16,flexShrink:0}}>
+        <h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:"clamp(20px,3vw,26px)",letterSpacing:-0.8,marginBottom:5}}>AI Business Advisor</h2>
+        <p style={{color:T.muted,fontSize:13}}>Knows your pipeline, your market, and your industry. Ask anything.</p>
+      </div>
+
+      {/* Stats context bar */}
+      <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap",flexShrink:0}}>
+        {[
+          {label:"Your close rate",value:`${closeRate}%`,color:closeRate>=30?T.green:closeRate>=15?T.amber:T.red},
+          {label:"Avg lead score",value:`${avgScore}`,color:T.cyan},
+          {label:"Active leads",value:active,color:T.blueL},
+          {label:"Industry",value:user.industry||"HVAC",color:indColor},
+          {label:"Market",value:user.city||"Columbus",color:T.muted},
+        ].map(s=>(
+          <div key={s.label} style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:8,padding:"6px 12px",display:"flex",alignItems:"center",gap:6}}>
+            <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:13,fontWeight:700,color:s.color}}>{s.value}</span>
+            <span style={{fontSize:11,color:T.muted}}>{s.label}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Message list */}
+      <div style={{flex:1,overflowY:"auto",background:T.surface,border:`1px solid ${T.border2}`,borderRadius:14,padding:16,marginBottom:12,display:"flex",flexDirection:"column",gap:12}}>
+        {messages.map((m,i)=>(
+          <div key={i} style={{display:"flex",gap:10,alignItems:"flex-start",flexDirection:m.role==="user"?"row-reverse":"row"}}>
+            <div style={{width:28,height:28,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,background:m.role==="user"?T.blue:`${indColor}20`,border:`1px solid ${m.role==="user"?T.blue:indColor}40`,color:m.role==="user"?"white":indColor}}>
+              {m.role==="user"?(user.company?.[0]||"U"):"✦"}
+            </div>
+            <div style={{maxWidth:"78%",background:m.role==="user"?"rgba(37,99,235,0.15)":T.surface2,border:`1px solid ${m.role==="user"?"rgba(37,99,235,0.3)":T.border}`,borderRadius:m.role==="user"?"14px 4px 14px 14px":"4px 14px 14px 14px",padding:"10px 14px",fontSize:13,color:T.offWhite,lineHeight:1.65,whiteSpace:"pre-wrap"}}>
+              {m.content}
+            </div>
+          </div>
+        ))}
+        {loading&&(
+          <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+            <div style={{width:28,height:28,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,background:`${indColor}20`,border:`1px solid ${indColor}40`,color:indColor}}>✦</div>
+            <div style={{background:T.surface2,border:`1px solid ${T.border}`,borderRadius:"4px 14px 14px 14px",padding:"12px 16px",display:"flex",gap:5,alignItems:"center"}}>
+              {[0,1,2].map(i=><div key={i} style={{width:6,height:6,borderRadius:"50%",background:T.muted,animation:`typingDot 1.2s ease ${i*0.2}s infinite`}}/>)}
+            </div>
+          </div>
+        )}
+        <div ref={bottomRef}/>
+      </div>
+
+      {/* Suggested questions */}
+      {messages.length<=1&&(
+        <div style={{marginBottom:10,flexShrink:0}}>
+          <div style={{fontSize:11,color:T.muted,marginBottom:7,fontFamily:"'JetBrains Mono',monospace",textTransform:"uppercase",letterSpacing:"0.07em"}}>Suggested questions</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+            {SUGGESTED.map(s=>(
+              <button key={s} onClick={()=>send(s)} style={{background:"none",border:`1px solid ${T.border2}`,borderRadius:8,padding:"6px 12px",cursor:"pointer",color:T.offWhite,fontSize:12,transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=indColor;e.currentTarget.style.background=`${indColor}10`;}} onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border2;e.currentTarget.style.background="none";}}>{s}</button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Input */}
+      <div style={{display:"flex",gap:8,flexShrink:0}}>
+        <input ref={inputRef} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&!e.shiftKey&&(e.preventDefault(),send())} placeholder="Ask your advisor anything…" style={{flex:1,background:T.surface,border:`1px solid ${T.border2}`,borderRadius:10,padding:"11px 14px",color:T.white,fontSize:13,outline:"none",transition:"border-color 0.15s",userSelect:"text",WebkitUserSelect:"text"}} onFocus={e=>e.target.style.borderColor=indColor} onBlur={e=>e.target.style.borderColor=T.border2}/>
+        <button onClick={()=>send()} disabled={!input.trim()||loading} style={{background:input.trim()&&!loading?`linear-gradient(135deg,${indColor},${indColor}cc)`:"none",border:`1px solid ${input.trim()&&!loading?indColor:T.border2}`,borderRadius:10,padding:"11px 18px",cursor:input.trim()&&!loading?"pointer":"not-allowed",color:input.trim()&&!loading?"white":T.muted,fontSize:13,fontWeight:600,transition:"all 0.2s",opacity:loading?0.6:1}}>
+          {loading?<Spinner size={13}/>:"Send"}
+        </button>
+      </div>
     </div>
   );
 }
