@@ -607,7 +607,14 @@ function IntakeForm({industryKey="hvac",onBack}){
   const [done,setDone]=useState(false);
   const [error,setError]=useState("");
   const [calendlyUrl,setCalendlyUrl]=useState("");
-  const [form,setForm]=useState({name:"",phone:"",email:"",issueType:"",issueDescription:"",urgency:"",budget:"",ownership:"",propertySize:"",preferredTime:"",zipCode:""});
+  const testLeads=[
+    {name:"Mike Johnson",phone:"(614) 555-0182",email:"mike.johnson@gmail.com",issueType:"ac_repair",issueDescription:"AC stopped blowing cold air yesterday. House is getting really hot — we have two young kids. Unit is about 8 years old, Carrier brand. Makes a clicking noise when it tries to start then shuts off.",urgency:"emergency",budget:"1000_2000",ownership:"owner",propertySize:"2000_3500",preferredTime:"Morning (8am–12pm)",zipCode:"43201"},
+    {name:"Sarah Williams",phone:"(614) 555-0347",email:"sarah.w@outlook.com",issueType:"furnace",issueDescription:"Furnace is making a loud banging noise at startup and the house isn't reaching the set temperature. It's a 12-year-old Lennox unit. Noticed a slight gas smell a few days ago but it went away.",urgency:"this_week",budget:"500_1000",ownership:"owner",propertySize:"1000_2000",preferredTime:"Afternoon (12pm–5pm)",zipCode:"43220"},
+    {name:"David Chen",phone:"(614) 555-0891",email:"dchen@yahoo.com",issueType:"ac_replacement",issueDescription:"My AC is 15 years old and has needed repairs two summers in a row. HVAC tech told me last year it would need to be replaced soon. Looking to get quotes for a full system replacement before summer hits.",urgency:"flexible",budget:"5000_plus",ownership:"owner",propertySize:"3500_plus",preferredTime:"Evening (5pm–8pm)",zipCode:"43235"},
+  ];
+  const testParam=new URLSearchParams(window.location.search).get("test");
+  const testDefault=testParam&&testLeads[parseInt(testParam)-1]?testLeads[parseInt(testParam)-1]:{name:"",phone:"",email:"",issueType:"",issueDescription:"",urgency:"",budget:"",ownership:"",propertySize:"",preferredTime:"",zipCode:""};
+  const [form,setForm]=useState(testDefault);
   const set=k=>v=>{setForm(f=>({...f,[k]:v}));setError("");};
 
   const STEPS=[
@@ -666,7 +673,7 @@ function IntakeForm({industryKey="hvac",onBack}){
       if(score>=50&&assignedSource!=="unassigned"){
         try{const biz=await db.getBusiness(assignedBid);setCalendlyUrl(biz?.calendly_url||"");}catch(e){}
       }
-      await db.insertLead({
+      const leadData={
         business_id:assignedBid,
         source:assignedSource,
         name:form.name,phone:form.phone,email:form.email,
@@ -676,7 +683,28 @@ function IntakeForm({industryKey="hvac",onBack}){
         zip_code:form.zipCode,industry:ind.label,score,tier,breakdown,status:"new",
         estimate_range:ind.estimates[form.issueType]||"$400–2,000",
         is_name:form.issueType.replace(/_/g," ").replace(/\b\w/g,c=>c.toUpperCase()),
-      });
+      };
+      await db.insertLead(leadData);
+      // Fire email + SMS notifications to contractor (non-blocking)
+      try{
+        const biz=await db.getBusiness(assignedBid);
+        const notifyPayload={
+          contractorName:biz?.company||biz?.email||"",
+          lead:{
+            name:form.name,phone:form.phone,email:form.email||"—",
+            service:form.issueType.replace(/_/g," ").replace(/\b\w/g,c=>c.toUpperCase()),
+            urgency:form.urgency,budget:form.budget?.replace(/_/g," "),
+            zip:form.zipCode,score,tier,
+            description:form.issueDescription,
+          }
+        };
+        if(biz?.email){
+          fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...notifyPayload,to:biz.email})}).catch(()=>{});
+        }
+        if(biz?.sms_notifications&&biz?.sms_phone){
+          fetch("/api/sms",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...notifyPayload,to:biz.sms_phone})}).catch(()=>{});
+        }
+      }catch(e){}
       setDone(true);
     }catch(e){setError("Something went wrong. Please try again.");console.error(e);}
     setSubmitting(false);
@@ -752,6 +780,11 @@ function AuthPage({onAuth}){
     try{
       const{session}=await db.signIn(email,password);
       if(!session)throw new Error("Login failed — check your credentials.");
+      // Admin email should never land on contractor dashboard
+      if(session.user.email===ADMIN_EMAIL){
+        await db.signOut();
+        throw new Error("Admin account — please log in at "+window.location.origin+"/?admin=1");
+      }
       const business=await db.getBusiness(session.user.id);
       onAuth({...session.user,...business});
     }catch(e){setError(e.message||"Something went wrong.");}
@@ -1143,6 +1176,8 @@ function SettingsPanel({user,onSave,toast}){
     calendly_url:user.calendly_url||"",
     phone:user.phone||"",
     city:user.city||"",
+    sms_notifications:user.sms_notifications||false,
+    sms_phone:user.sms_phone||"",
   });
   const [saving,setSaving]=useState(false);
   const [billing,setBilling]=useState(null);
@@ -1284,6 +1319,40 @@ function SettingsPanel({user,onSave,toast}){
         <code style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:T.blueL,flex:1,wordBreak:"break-all"}}>{intakeUrl}</code>
         <button onClick={()=>{navigator.clipboard.writeText(intakeUrl);toast({message:"Copied!",type:"success"});}} style={{background:T.blue,border:"none",borderRadius:7,padding:"7px 14px",cursor:"pointer",color:"white",fontSize:12,fontWeight:600,flexShrink:0}}>Copy</button>
       </div>
+    </div>
+
+    {/* ── Public Profile URL ── */}
+    <div>
+      <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Your Public Profile Page</div>
+      <div style={{fontSize:12,color:T.muted,marginBottom:10}}>Share as your homepage — shows your services and lets people request a quote directly.</div>
+      <div style={{background:T.surface2,border:`1px solid rgba(16,185,129,0.25)`,borderRadius:10,padding:"12px 14px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <code style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:T.green,flex:1,wordBreak:"break-all"}}>{`${window.location.origin}/?profile=${user.id}`}</code>
+        <button onClick={()=>{navigator.clipboard.writeText(`${window.location.origin}/?profile=${user.id}`);toast({message:"Profile URL copied!",type:"success"});}} style={{background:"rgba(16,185,129,0.12)",border:"1px solid rgba(16,185,129,0.3)",borderRadius:7,padding:"7px 14px",cursor:"pointer",color:T.green,fontSize:12,fontWeight:600,flexShrink:0}}>Copy</button>
+      </div>
+    </div>
+
+    {/* ── SMS Notifications ── */}
+    <div>
+      <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>SMS Lead Alerts</div>
+      <div style={{fontSize:12,color:T.muted,marginBottom:10}}>Get a text the moment a new lead comes in. Faster than email — contractors who respond within 5 min close 80% more.</div>
+      <div style={{background:T.surface2,border:`1px solid ${T.border2}`,borderRadius:10,padding:"14px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:13,fontWeight:600,color:T.white,marginBottom:2}}>Text me new leads</div>
+          <div style={{fontSize:11,color:T.muted}}>Instant SMS when a qualified lead is assigned to you</div>
+        </div>
+        <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",flexShrink:0}}>
+          <div onClick={()=>setForm(f=>({...f,sms_notifications:!f.sms_notifications}))} style={{width:40,height:22,borderRadius:11,background:form.sms_notifications?T.green:"rgba(255,255,255,0.1)",border:`1px solid ${form.sms_notifications?"rgba(16,185,129,0.5)":T.border2}`,transition:"all 0.2s",position:"relative",cursor:"pointer",flexShrink:0}}>
+            <div style={{position:"absolute",top:2,left:form.sms_notifications?19:2,width:16,height:16,borderRadius:"50%",background:"white",transition:"left 0.2s",boxShadow:"0 1px 3px rgba(0,0,0,0.3)"}}/>
+          </div>
+          <span style={{fontSize:12,color:form.sms_notifications?T.green:T.muted,fontWeight:600}}>{form.sms_notifications?"On":"Off"}</span>
+        </label>
+      </div>
+      {form.sms_notifications&&(
+        <div style={{marginTop:8}}>
+          <Inp label="Mobile Number for SMS" value={form.sms_phone||""} onChange={v=>setForm(f=>({...f,sms_phone:v}))} type="tel" placeholder="(614) 555-0000"/>
+          <div style={{fontSize:11,color:T.muted,marginTop:4}}>Standard SMS rates may apply. US numbers only.</div>
+        </div>
+      )}
     </div>
 
     <Btn onClick={save} disabled={saving}>{saving?<span style={{display:"flex",alignItems:"center",gap:8}}><Spinner size={14}/>Saving…</span>:"Save Settings"}</Btn>
@@ -1570,6 +1639,77 @@ function AnalyticsView({leads, user}){
   </div>;
 }
 
+
+// ─── ONBOARDING CHECKLIST ─────────────────────────────────────────────────────
+function OnboardingChecklist({user, leads, onNavigate}){
+  const intakeUrl=`${window.location.origin}/?industry=${(user.industry||"hvac").toLowerCase().replace(/\s+/g,"_")}&bid=${user.id}`;
+  const hasLeads=leads.length>0;
+  const hasCalendly=!!(user.calendly_url);
+  const profileComplete=!!(user.company&&user.city&&user.phone);
+  const allDone=hasLeads&&hasCalendly&&profileComplete;
+
+  const STEPS=[
+    {
+      id:"profile",done:profileComplete,icon:"🏢",
+      title:"Complete your profile",
+      desc:"Add your company name, city, and phone number so leads know who to expect.",
+      cta:"Go to Settings →",
+      action:()=>onNavigate("settings"),
+    },
+    {
+      id:"intake",done:hasLeads,icon:"🔗",
+      title:"Share your intake URL",
+      desc:"This link is how homeowners find you. Share it on Google, social, or in texts.",
+      cta:"Copy link",
+      action:()=>{navigator.clipboard.writeText(intakeUrl);},
+      detail:intakeUrl,
+    },
+    {
+      id:"calendly",done:hasCalendly,icon:"📅",
+      title:"Connect your Calendly",
+      desc:"Qualified leads will see your booking link automatically after submitting. Speeds up close rate significantly.",
+      cta:"Add in Settings →",
+      action:()=>onNavigate("settings"),
+    },
+  ];
+
+  if(allDone) return null;
+  const doneCount=STEPS.filter(s=>s.done).length;
+
+  return(
+    <div style={{background:"rgba(37,99,235,0.05)",border:"1px solid rgba(37,99,235,0.2)",borderRadius:14,padding:"20px 24px",marginBottom:20,animation:"fadeIn 0.3s ease"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10}}>
+        <div>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:4}}>
+            <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.blueL,textTransform:"uppercase",letterSpacing:"0.1em"}}>Getting Started</div>
+            <span style={{fontSize:10,background:"rgba(37,99,235,0.15)",color:T.blueL,border:"1px solid rgba(37,99,235,0.3)",borderRadius:4,padding:"1px 7px",fontWeight:700}}>{doneCount}/{STEPS.length} done</span>
+          </div>
+          <h3 style={{fontFamily:"'DM Serif Display',serif",fontSize:17,letterSpacing:-0.4,color:T.white}}>3 steps to get your first lead</h3>
+        </div>
+        <div style={{display:"flex",gap:3}}>
+          {STEPS.map((s,i)=><div key={i} style={{width:28,height:5,borderRadius:3,background:s.done?T.green:"rgba(255,255,255,0.1)"}}/>)}
+        </div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}} className="grid-1-mobile">
+        {STEPS.map(s=>(
+          <div key={s.id} style={{background:s.done?"rgba(16,185,129,0.06)":T.surface,border:`1px solid ${s.done?"rgba(16,185,129,0.25)":T.border2}`,borderRadius:10,padding:"14px 16px",position:"relative",opacity:s.done?0.75:1}}>
+            {s.done&&<div style={{position:"absolute",top:10,right:10,width:18,height:18,borderRadius:"50%",background:"rgba(16,185,129,0.2)",border:"1px solid rgba(16,185,129,0.4)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:T.green}}>✓</div>}
+            <div style={{fontSize:22,marginBottom:10}}>{s.icon}</div>
+            <div style={{fontSize:13,fontWeight:600,color:s.done?T.muted:T.white,marginBottom:4,textDecoration:s.done?"line-through":"none"}}>{s.title}</div>
+            <div style={{fontSize:12,color:T.muted,lineHeight:1.5,marginBottom:s.done?0:12}}>{s.desc}</div>
+            {!s.done&&(
+              <button onClick={s.action} style={{fontSize:12,color:T.blueL,fontWeight:600,background:"none",border:"none",cursor:"pointer",padding:0,marginTop:4}}>{s.cta}</button>
+            )}
+            {!s.done&&s.detail&&(
+              <div style={{marginTop:8,background:T.surface2,borderRadius:6,padding:"6px 8px",fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:T.muted,wordBreak:"break-all",lineHeight:1.5}}>{s.detail}</div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Dashboard({user,onLogout}){
   const [leads,setLeads]=useState([]);
   const [loading,setLoading]=useState(true);
@@ -1677,6 +1817,9 @@ function Dashboard({user,onLogout}){
               </div>
             ))}
           </div>
+
+          {/* Onboarding checklist */}
+          <OnboardingChecklist user={currentUser} leads={leads} onNavigate={setView}/>
 
           {/* Live Lead Preview — top new/hot lead */}
           {leads.filter(l=>l.status==="new").length>0&&(()=>{
@@ -2390,16 +2533,16 @@ function LandingPage({onLogin,onIntakeForm,onApply,onIndustry}){
   return <div style={{background:T.bg,minHeight:"100vh",width:"100%",overflowX:"hidden"}}>
     <PromoBanner onApply={onApply}/>
     {/* NAV */}
-    <nav style={{position:"fixed",top:40,left:0,right:0,height:60,zIndex:200,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 20px",background:"rgba(9,12,17,0.94)",backdropFilter:"blur(20px)",borderBottom:`1px solid ${T.border}`}}>
-      <button onClick={()=>window.scrollTo({top:0,behavior:"smooth"})} style={{display:"flex",alignItems:"center",gap:10,background:"none",border:"none",cursor:"pointer"}}>
+    <nav style={{position:"fixed",top:40,left:0,right:0,height:60,zIndex:200,display:"grid",gridTemplateColumns:"1fr auto 1fr",alignItems:"center",padding:"0 24px",background:"rgba(9,12,17,0.94)",backdropFilter:"blur(20px)",borderBottom:`1px solid ${T.border}`}}>
+      <button onClick={()=>window.scrollTo({top:0,behavior:"smooth"})} style={{display:"flex",alignItems:"center",gap:10,background:"none",border:"none",cursor:"pointer",justifySelf:"start"}}>
         <LogoMark size={28}/><span style={{fontFamily:"'DM Serif Display',serif",fontSize:18,color:T.white}}>Streamline</span>
       </button>
-      <div style={{display:"flex",alignItems:"center",gap:2}} className="hide-mobile">
+      <div style={{display:"flex",alignItems:"center",gap:2,justifySelf:"center"}} className="hide-mobile">
         {navLinks.map(([id,label])=>(
           <button key={id} onClick={()=>scrollTo(id)} style={{background:"none",border:"none",cursor:"pointer",fontSize:13,fontWeight:500,color:T.muted,padding:"6px 11px",borderRadius:7,transition:"color 0.2s"}} onMouseEnter={e=>e.currentTarget.style.color=T.white} onMouseLeave={e=>e.currentTarget.style.color=T.muted}>{label}</button>
         ))}
       </div>
-      <div style={{display:"flex",alignItems:"center",gap:8}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,justifySelf:"end"}}>
         <Btn variant="outline" onClick={()=>setShowAuth(true)} style={{fontSize:13,padding:"8px 16px"}} className="hide-mobile">Log In</Btn>
         <button onClick={()=>setMobileNav(o=>!o)} style={{background:"none",border:`1px solid ${T.border2}`,color:T.white,cursor:"pointer",fontSize:16,padding:"7px 10px",borderRadius:8,display:"none"}} id="burger">☰</button>
       </div>
@@ -5031,48 +5174,90 @@ GOAL: 2 new reviews per month minimum.`,
         💡 <strong style={{color:T.green}}>Quick wins:</strong> The follow-up call script + asking for Google reviews are the two highest-ROI things you can implement this week. Most contractors skip both.
       </div>
 
-      {/* External Sources */}
-      <div style={{marginBottom:28}}>
-        <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.blueL,textTransform:"uppercase",letterSpacing:"0.14em",marginBottom:6}}>External Resources</div>
-        <h3 style={{fontFamily:"'DM Serif Display',serif",fontSize:20,letterSpacing:-0.5,marginBottom:4,color:T.white}}>Industry Sources &amp; Reading</h3>
-        <p style={{color:T.muted,fontSize:13,marginBottom:18}}>Vetted publications, government data sources, and tools used by top operators. Click any card to open.</p>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}} className="grid-1-mobile">
-          {[
-            {icon:"📊",cat:"Market Data",name:"IBISWorld",url:"https://ibisworld.com",desc:"Paid industry research with annual market size, 5-year forecasts, and competitive landscapes for every trade sector."},
-            {icon:"🏗️",cat:"Gov Data",name:"U.S. Census — Construction",url:"https://www.census.gov/topics/construction.html",desc:"Free government data on housing starts, building permits, and construction spending by region. Great for HVAC, roofing, plumbing, and electrical demand signals."},
-            {icon:"💹",cat:"Pricing Index",name:"BLS Producer Price Index",url:"https://www.bls.gov/ppi",desc:"Track material price inflation monthly — construction inputs, HVAC equipment, copper, lumber. Free government data updated monthly."},
-            {icon:"📰",cat:"HVAC",name:"ACHR News",url:"https://www.achrnews.com",desc:"Leading trade publication for HVAC contractors: industry trends, equipment news, refrigerant regulations, and business strategy."},
-            {icon:"🏠",cat:"Roofing",name:"Roofing Contractor Magazine",url:"https://www.roofingcontractor.com",desc:"Trade news for roofing pros covering storm season, material pricing, manufacturer updates, and business best practices."},
-            {icon:"🔧",cat:"Plumbing",name:"Plumbing & Mechanical",url:"https://www.pmmag.com",desc:"Trade coverage of plumbing and hydronics. Covers code changes, supply chain updates, water heater regulations, and contractor benchmarks."},
-            {icon:"⚡",cat:"Electrical",name:"Electrical Contractor Magazine",url:"https://www.ecmag.com",desc:"NEC code updates, EV charger market growth data, solar integration trends, and workforce development for electrical contractors."},
-            {icon:"💅",cat:"Beauty Schools",name:"NACCAS",url:"https://www.naccas.org",desc:"National Accrediting Commission for Career Arts & Sciences — accreditation standards, enrollment trends, and regulatory news for cosmetology and beauty schools."},
-            {icon:"✂️",cat:"Beauty Schools",name:"PBA — Professional Beauty Assoc.",url:"https://www.probeauty.org",desc:"Industry data on salon employment, beauty school enrollment, and consumer spending on beauty services. Publishes annual industry stats."},
-            {icon:"🌿",cat:"Landscaping",name:"Lawn & Landscape",url:"https://www.lawnandlandscape.com",desc:"Trade publication for landscaping and lawn care pros. Covers pricing benchmarks, equipment, labor market, and seasonal outlooks."},
-            {icon:"⭐",cat:"Reputation",name:"ReviewTrackers Annual Report",url:"https://www.reviewtrackers.com/reports/online-reviews-survey",desc:"Consumer survey on how homeowners use Google reviews when hiring service contractors. Useful for benchmarking your review strategy."},
-            {icon:"🔍",cat:"Advertising",name:"Google LSA Help Center",url:"https://support.google.com/google-ads/answer/7124569",desc:"Official documentation for Google Local Services Ads — setup, budget, verification, and optimization for service contractors."},
-            {icon:"💼",cat:"Business",name:"SCORE Mentors",url:"https://www.score.org",desc:"Free small business mentorship from retired executives. Strong resources on pricing, hiring, financial modeling, and scaling a service business."},
-            {icon:"📉",cat:"Economic Data",name:"FRED — Economic Data",url:"https://fred.stlouisfed.org",desc:"Federal Reserve economic database. Track housing market indicators, consumer spending, and local economic data for your market."},
-            {icon:"🏛️",cat:"Licensing",name:"Contractor License Reference",url:"https://www.contractors-license.org",desc:"State-by-state contractor licensing requirements, renewal deadlines, and continuing education obligations for all trades."},
-          ].map(s=>(
-            <a key={s.name} href={s.url} target="_blank" rel="noreferrer"
-              style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:12,padding:"14px 16px",textDecoration:"none",display:"block",transition:"all 0.18s"}}
-              onMouseEnter={e=>{e.currentTarget.style.background=T.surface2;e.currentTarget.style.borderColor="rgba(59,130,246,0.4)";}}
-              onMouseLeave={e=>{e.currentTarget.style.background=T.surface;e.currentTarget.style.borderColor=T.border2;}}>
-              <div style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:8}}>
-                <div style={{width:34,height:34,borderRadius:8,background:"rgba(37,99,235,0.1)",border:"1px solid rgba(37,99,235,0.15)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,flexShrink:0}}>{s.icon}</div>
-                <div style={{minWidth:0}}>
-                  <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:3}}>
-                    <span style={{fontSize:13,fontWeight:600,color:T.white}}>{s.name}</span>
-                    <span style={{fontSize:10,color:T.blueL}}>↗</span>
+      {/* External Sources — filtered by industry */}
+      {(()=>{
+        const ind=(user.industry||"").toLowerCase();
+        const isHVAC=ind.includes("hvac");
+        const isRoof=ind.includes("roof");
+        const isPlumb=ind.includes("plumb");
+        const isElec=ind.includes("electric");
+        const isBeauty=ind.includes("beauty")||ind.includes("cosmet")||ind.includes("esthetic");
+        const isLandscape=ind.includes("landscape")||ind.includes("lawn");
+        const isConstruction=isHVAC||isRoof||isPlumb||isElec||isLandscape;
+
+        const ALL_SOURCES=[
+          // Universal
+          {icon:"⭐",cat:"Reputation",name:"ReviewTrackers Annual Report",url:"https://www.reviewtrackers.com/reports/online-reviews-survey",desc:"Consumer survey on how homeowners use Google reviews when hiring service contractors.",industries:"all"},
+          {icon:"🔍",cat:"Advertising",name:"Google LSA Help Center",url:"https://support.google.com/google-ads/answer/7124569",desc:"Official documentation for Google Local Services Ads — setup, budget, and optimization for service businesses.",industries:"all"},
+          {icon:"💼",cat:"Business",name:"SCORE Mentors",url:"https://www.score.org",desc:"Free small business mentorship from retired executives. Pricing, hiring, financial modeling, and scaling.",industries:"all"},
+          {icon:"📊",cat:"Market Data",name:"IBISWorld",url:"https://ibisworld.com",desc:"Industry size reports, market share data, and 5-year forecasts for every trade sector.",industries:"all"},
+          // Construction trades
+          {icon:"🏗️",cat:"Gov Data",name:"U.S. Census — Construction",url:"https://www.census.gov/topics/construction.html",desc:"Free government data on housing starts, building permits, and construction spending by region.",industries:"hvac,roofing,plumbing,electrical"},
+          {icon:"💹",cat:"Pricing Index",name:"BLS Producer Price Index",url:"https://www.bls.gov/ppi",desc:"Track material price inflation monthly — construction inputs, HVAC equipment, copper, lumber.",industries:"hvac,roofing,plumbing,electrical"},
+          {icon:"📉",cat:"Economic Data",name:"FRED — Economic Data",url:"https://fred.stlouisfed.org",desc:"Federal Reserve economic database. Track housing market indicators and consumer spending in your market.",industries:"hvac,roofing,plumbing,electrical"},
+          {icon:"🏛️",cat:"Licensing",name:"Contractor License Reference",url:"https://www.contractors-license.org",desc:"State-by-state contractor licensing requirements, renewal deadlines, and continuing education.",industries:"hvac,roofing,plumbing,electrical,landscape"},
+          // HVAC
+          {icon:"📰",cat:"HVAC",name:"ACHR News",url:"https://www.achrnews.com",desc:"Leading trade publication for HVAC contractors: industry trends, refrigerant regulations, and business strategy.",industries:"hvac"},
+          {icon:"🌡️",cat:"HVAC",name:"HARDI — Heating & A/C Distributors",url:"https://hardinet.org",desc:"Industry association data on HVAC distribution, equipment pricing trends, and contractor resources.",industries:"hvac"},
+          // Roofing
+          {icon:"🏠",cat:"Roofing",name:"Roofing Contractor Magazine",url:"https://www.roofingcontractor.com",desc:"Trade news for roofing pros: storm season, material pricing, manufacturer updates, and best practices.",industries:"roofing"},
+          {icon:"🌧️",cat:"Roofing",name:"NRCA — National Roofing Contractors Assoc.",url:"https://www.nrca.net",desc:"Industry standards, technical resources, workforce training, and legislative updates for roofing contractors.",industries:"roofing"},
+          // Plumbing
+          {icon:"🔧",cat:"Plumbing",name:"Plumbing & Mechanical",url:"https://www.pmmag.com",desc:"Trade coverage of plumbing and hydronics. Covers code changes, supply chain updates, and contractor benchmarks.",industries:"plumbing"},
+          {icon:"💧",cat:"Plumbing",name:"PHCC — Plumbing-Heating-Cooling Contractors",url:"https://www.phccweb.org",desc:"National association for plumbing contractors. Code updates, licensing resources, and industry events.",industries:"plumbing"},
+          // Electrical
+          {icon:"⚡",cat:"Electrical",name:"Electrical Contractor Magazine",url:"https://www.ecmag.com",desc:"NEC code updates, EV charger market growth, solar integration trends, and workforce development.",industries:"electrical"},
+          {icon:"🔌",cat:"Electrical",name:"NECA — National Electrical Contractors Assoc.",url:"https://www.necanet.org",desc:"Labor market data, code compliance resources, and industry benchmarks for electrical contractors.",industries:"electrical"},
+          // Beauty Schools
+          {icon:"💅",cat:"Beauty Schools",name:"NACCAS",url:"https://www.naccas.org",desc:"National Accrediting Commission for Career Arts & Sciences — accreditation standards and enrollment trends.",industries:"beauty"},
+          {icon:"✂️",cat:"Beauty Schools",name:"PBA — Professional Beauty Assoc.",url:"https://www.probeauty.org",desc:"Industry data on salon employment, beauty school enrollment, and consumer spending on beauty services.",industries:"beauty"},
+          {icon:"🎓",cat:"Beauty Schools",name:"AACS — American Assoc. of Cosmetology Schools",url:"https://www.beautyschools.org",desc:"Resources for cosmetology school operators: enrollment data, accreditation, and industry research.",industries:"beauty"},
+          {icon:"📋",cat:"Regulatory",name:"State Board of Cosmetology",url:"https://www.naccas.org/resources/state-boards",desc:"Links to every state cosmetology licensing board — renewal requirements, exam info, and school approval.",industries:"beauty"},
+          // Landscaping
+          {icon:"🌿",cat:"Landscaping",name:"Lawn & Landscape",url:"https://www.lawnandlandscape.com",desc:"Trade publication for landscaping pros. Pricing benchmarks, equipment, labor market, and seasonal outlooks.",industries:"landscape"},
+          {icon:"🌱",cat:"Landscaping",name:"NALP — National Assoc. of Landscape Professionals",url:"https://www.landscapeprofessionals.org",desc:"Industry benchmarks, workforce resources, and certification programs for landscape contractors.",industries:"landscape"},
+        ];
+
+        const filtered=ALL_SOURCES.filter(s=>{
+          if(s.industries==="all") return true;
+          const inds=s.industries.split(",");
+          if(isHVAC&&inds.includes("hvac")) return true;
+          if(isRoof&&inds.includes("roofing")) return true;
+          if(isPlumb&&inds.includes("plumbing")) return true;
+          if(isElec&&inds.includes("electrical")) return true;
+          if(isBeauty&&inds.includes("beauty")) return true;
+          if(isLandscape&&inds.includes("landscape")) return true;
+          return false;
+        });
+
+        return(
+          <div style={{marginBottom:28}}>
+            <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.blueL,textTransform:"uppercase",letterSpacing:"0.14em",marginBottom:6}}>External Resources</div>
+            <h3 style={{fontFamily:"'DM Serif Display',serif",fontSize:20,letterSpacing:-0.5,marginBottom:4,color:T.white}}>Recommended for {user.industry||"Your Industry"}</h3>
+            <p style={{color:T.muted,fontSize:13,marginBottom:18}}>Vetted publications, associations, and data sources for {user.industry||"your"} professionals.</p>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}} className="grid-1-mobile">
+              {filtered.map(s=>(
+                <a key={s.name} href={s.url} target="_blank" rel="noreferrer"
+                  style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:12,padding:"14px 16px",textDecoration:"none",display:"block",transition:"all 0.18s"}}
+                  onMouseEnter={e=>{e.currentTarget.style.background=T.surface2;e.currentTarget.style.borderColor="rgba(59,130,246,0.4)";}}
+                  onMouseLeave={e=>{e.currentTarget.style.background=T.surface;e.currentTarget.style.borderColor=T.border2;}}>
+                  <div style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:8}}>
+                    <div style={{width:34,height:34,borderRadius:8,background:"rgba(37,99,235,0.1)",border:"1px solid rgba(37,99,235,0.15)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,flexShrink:0}}>{s.icon}</div>
+                    <div style={{minWidth:0}}>
+                      <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:3}}>
+                        <span style={{fontSize:13,fontWeight:600,color:T.white}}>{s.name}</span>
+                        <span style={{fontSize:10,color:T.blueL}}>↗</span>
+                      </div>
+                      <span style={{fontSize:9,background:"rgba(37,99,235,0.1)",color:T.blueL,borderRadius:3,padding:"1px 6px",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em"}}>{s.cat}</span>
+                    </div>
                   </div>
-                  <span style={{fontSize:9,background:"rgba(37,99,235,0.1)",color:T.blueL,borderRadius:3,padding:"1px 6px",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em"}}>{s.cat}</span>
-                </div>
-              </div>
-              <p style={{fontSize:12,color:T.muted,lineHeight:1.6,margin:0}}>{s.desc}</p>
-            </a>
-          ))}
-        </div>
-      </div>
+                  <p style={{fontSize:12,color:T.muted,lineHeight:1.6,margin:0}}>{s.desc}</p>
+                </a>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Resource viewer modal */}
       {RESOURCES.filter(r=>r.id===open).map(r=>(
@@ -6992,6 +7177,86 @@ function JobPhotoGallery({user,leads,toast}){
   );
 }
 
+
+// ─── CONTRACTOR PUBLIC PROFILE PAGE ──────────────────────────────────────────
+function ContractorProfilePage({bid}){
+  const [biz,setBiz]=useState(null);
+  const [loading,setLoading]=useState(true);
+  const [showForm,setShowForm]=useState(false);
+
+  useEffect(()=>{
+    db.getBusiness(bid).then(b=>{setBiz(b);setLoading(false);}).catch(()=>setLoading(false));
+  },[bid]);
+
+  if(loading)return<div style={{minHeight:"100vh",background:T.bg,display:"flex",alignItems:"center",justifyContent:"center"}}><Spinner size={32}/></div>;
+  if(!biz)return<div style={{minHeight:"100vh",background:T.bg,display:"flex",alignItems:"center",justifyContent:"center",color:T.muted,fontSize:14}}>Business not found.</div>;
+
+  if(showForm){
+    const indKey=Object.keys(INDUSTRIES).find(k=>INDUSTRIES[k].label.toLowerCase()===biz.industry?.toLowerCase())||"hvac";
+    return<IntakeForm industryKey={indKey} onBack={()=>setShowForm(false)}/>;
+  }
+
+  const ind=Object.values(INDUSTRIES).find(i=>i.label.toLowerCase()===biz.industry?.toLowerCase())||INDUSTRIES.hvac;
+  const initials=(biz.company||biz.email||"?").split(" ").map(w=>w[0]||"").join("").slice(0,2).toUpperCase();
+
+  return(
+    <div style={{minHeight:"100vh",background:T.bg,display:"flex",flexDirection:"column"}}>
+      {/* Header */}
+      <div style={{padding:"14px 20px",borderBottom:`1px solid ${T.border}`,background:T.surface,display:"flex",alignItems:"center",gap:10}}>
+        <LogoMark size={24}/>
+        <span style={{fontFamily:"'DM Serif Display',serif",fontSize:15,color:T.white}}>Streamline</span>
+      </div>
+
+      <div style={{flex:1,display:"flex",justifyContent:"center",padding:"48px 20px"}}>
+        <div style={{width:"100%",maxWidth:560,animation:"fadeUp 0.4s ease"}}>
+          {/* Profile card */}
+          <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:16,padding:"32px 28px",marginBottom:16,textAlign:"center"}}>
+            <div style={{width:72,height:72,borderRadius:"50%",background:`${ind.color}20`,border:`2px solid ${ind.color}50`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,fontWeight:700,color:ind.color,margin:"0 auto 16px",fontFamily:"'DM Serif Display',serif"}}>{initials}</div>
+            <h1 style={{fontFamily:"'DM Serif Display',serif",fontSize:"clamp(22px,5vw,30px)",letterSpacing:-0.8,marginBottom:6}}>{biz.company||"Local Professional"}</h1>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:20,flexWrap:"wrap"}}>
+              <span style={{fontSize:13,color:ind.color,fontWeight:600}}>{ind.icon} {ind.label}</span>
+              {biz.city&&<><span style={{color:T.border2}}>·</span><span style={{fontSize:13,color:T.muted}}>📍 {biz.city}</span></>}
+              <span style={{fontSize:11,background:"rgba(16,185,129,0.1)",color:T.green,border:"1px solid rgba(16,185,129,0.25)",borderRadius:4,padding:"1px 8px",fontWeight:600}}>✓ Verified</span>
+            </div>
+            <button onClick={()=>setShowForm(true)} style={{width:"100%",background:`linear-gradient(135deg,${ind.color},${ind.color}cc)`,border:"none",borderRadius:10,padding:"14px 24px",cursor:"pointer",color:"white",fontSize:15,fontWeight:700,marginBottom:12}}>
+              Get a Free {ind.label} Quote →
+            </button>
+            <p style={{fontSize:12,color:T.muted}}>🔒 Your info stays private — shared only with this verified pro.</p>
+          </div>
+
+          {/* Services */}
+          <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:14,padding:"20px 24px",marginBottom:12}}>
+            <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:12}}>Services Offered</div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+              {(ind.issueTypes||[]).slice(0,8).map(t=>(
+                <span key={t.value} style={{fontSize:12,background:T.surface2,border:`1px solid ${T.border2}`,borderRadius:6,padding:"5px 10px",color:T.offWhite}}>{t.label}</span>
+              ))}
+            </div>
+          </div>
+
+          {/* Trust badges */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+            {[
+              {icon:"🎯",label:"Pre-qualified leads only"},
+              {icon:"⚡",label:"Fast response time"},
+              {icon:"🔒",label:"Licensed & insured"},
+            ].map(b=>(
+              <div key={b.label} style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:10,padding:"12px 10px",textAlign:"center"}}>
+                <div style={{fontSize:20,marginBottom:6}}>{b.icon}</div>
+                <div style={{fontSize:11,color:T.muted,lineHeight:1.4}}>{b.label}</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{marginTop:20,textAlign:"center",fontSize:11,color:T.muted}}>
+            Powered by <a href="/" style={{color:T.blueL,textDecoration:"none",fontWeight:600}}>Streamline</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── APP ROOT ─────────────────────────────────────────────────────────────────
 export default function App(){
   const [page,setPage]=useState("loading");
@@ -7003,8 +7268,10 @@ export default function App(){
 
   // Detect ?admin=1 in URL to show admin login
   const isAdminRoute=new URLSearchParams(window.location.search).get("admin")==="1";
+  const profileBid=new URLSearchParams(window.location.search).get("profile");
 
   useEffect(()=>{
+    if(profileBid){setPage("profile");return;}
     const urlInd=getIndustryFromURL();
     db.getSession().then(async session=>{
       if(session){
@@ -7029,6 +7296,13 @@ export default function App(){
       if(event==="SIGNED_OUT"){
         setUser(null);setAdminUser(null);
         setPage(isAdminRoute?"adminLogin":"landing");
+      } else if((event==="SIGNED_IN"||event==="INITIAL_SESSION")&&session){
+        // Guard: if admin email, always go to admin — never contractor dashboard
+        if(session.user.email===ADMIN_EMAIL){
+          setAdminUser(session.user);
+          setUser(null);
+          setPage("admin");
+        }
       }
     });
     return()=>subscription.unsubscribe();
@@ -7045,6 +7319,7 @@ export default function App(){
   );
   if(page==="adminLogin")return <AdminLogin onAuth={u=>{setAdminUser(u);setPage("admin");}}/>;
   if(page==="admin"&&adminUser)return <AdminDashboard adminUser={adminUser} onLogout={handleAdminLogout}/>;
+  if(profileBid||page==="profile")return <ContractorProfilePage bid={profileBid}/>;
   if(page2==="apply")return <ContractorApplicationForm onBack={()=>setPage2(null)}/>;
   if(page==="intake")return <IntakeForm industryKey={intakeInd} onBack={()=>setPage("landing")}/>;
   if(page==="dashboard"&&user)return <Dashboard user={user} onLogout={handleLogout}/>;
