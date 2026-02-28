@@ -129,22 +129,22 @@ const INDUSTRIES = {
     estimates:{"panel_upgrade":"$1,500–$4,000","outlet_repair":"$100–$400","wiring":"$500–$3,000","lighting":"$150–$800","ev_charger":"$400–$1,200","ceiling_fan":"$100–$350","generator":"$3,000–$8,000","safety_inspection":"$150–$350","smart_home":"$500–$3,000"},
   },
   education:{
-    label:"Beauty Trades",icon:"💅",color:"#F472B6",
-    headline:"Get a Free Beauty Services Quote",
-    subline:"Cosmetology, esthetics, nail care, and more — connect with a licensed local beauty professional today.",
+    label:"Beauty Schools",icon:"💅",color:"#F472B6",
+    headline:"Find Your Beauty Program",
+    subline:"Cosmetology, esthetics, nail tech, barbering, and more — get matched with an accredited beauty school near you.",
     issueTypes:[
-      {value:"cosmetology",label:"Cosmetology / Hair Services"},
+      {value:"cosmetology",label:"Cosmetology / Hair Styling"},
       {value:"esthetics",label:"Esthetics / Skin Care"},
-      {value:"nail_care",label:"Nail Care / Nail Art"},
-      {value:"lash_brow",label:"Lash & Brow Services"},
-      {value:"waxing",label:"Waxing / Hair Removal"},
-      {value:"makeup",label:"Makeup / Special Occasion"},
-      {value:"massage",label:"Massage Therapy"},
-      {value:"beauty_school",label:"Beauty School / Training Program"},
-      {value:"salon_suite",label:"Salon Suite Rental Inquiry"},
-      {value:"other",label:"Other Beauty Service"},
+      {value:"nail_tech",label:"Nail Technology"},
+      {value:"barbering",label:"Barbering"},
+      {value:"makeup_artistry",label:"Makeup Artistry"},
+      {value:"massage_therapy",label:"Massage Therapy"},
+      {value:"lash_brow",label:"Lash & Brow Artistry"},
+      {value:"salon_management",label:"Salon Management"},
+      {value:"instructor",label:"Cosmetology Instructor Program"},
+      {value:"other",label:"Other Beauty Program"},
     ],
-    estimates:{"cosmetology":"$40–$200/visit","esthetics":"$60–$180/session","nail_care":"$30–$100/visit","lash_brow":"$50–$150/session","waxing":"$20–$120/session","makeup":"$75–$300/event","massage":"$60–$150/hr","beauty_school":"$5,000–$20,000/program","salon_suite":"$200–$600/week"},
+    estimates:{"cosmetology":"$10,000–$22,000","esthetics":"$5,000–$15,000","nail_tech":"$3,000–$9,000","barbering":"$8,000–$18,000","makeup_artistry":"$4,000–$12,000","massage_therapy":"$6,000–$16,000","lash_brow":"$2,500–$7,000","salon_management":"$8,000–$20,000","instructor":"$5,000–$14,000"},
   },
 };
 
@@ -469,7 +469,7 @@ const CHAT_RULES = [
 
   // Industries / what trades
   { match: m => /(industr|trade|hvac|roofing|plumbing|electrical|educat|tutor|lesson|what.*(serve|support|cover|offer)|which.*(trade|industr|business))/.test(m),
-    reply: () => "We serve **five industries** in the **Columbus, OH metro area**:\n\n› 🌬️ **HVAC** — AC repair, replacement, heating, duct work\n› 🏠 **Roofing** — repair, replacement, gutters, storm damage\n› 🔧 **Plumbing** — leaks, drains, water heaters, remodels\n› ⚡ **Electrical** — panels, wiring, EV chargers, smart home\n› 💅 **Beauty Trades** — cosmetology, esthetics, nail care, lash & brow\n\nMore cities launching throughout 2026. Email hello@streamline.io to get on the waitlist for your area." },
+    reply: () => "We serve **five industries** in the **Columbus, OH metro area**:\n\n› 🌬️ **HVAC** — AC repair, replacement, heating, duct work\n› 🏠 **Roofing** — repair, replacement, gutters, storm damage\n› 🔧 **Plumbing** — leaks, drains, water heaters, remodels\n› ⚡ **Electrical** — panels, wiring, EV chargers, smart home\n› 💅 **Beauty Schools** — cosmetology, esthetics, nail tech, barbering, massage therapy programs\n\nMore cities launching throughout 2026. Email hello@streamline.io to get on the waitlist for your area." },
 
   // Location / cities / areas
   { match: m => /(location|city|cities|area|where|columbus|ohio|oh|region|market|expand|available in|do you serve)/.test(m),
@@ -1078,11 +1078,11 @@ function SeasonalBoosts({user, toast}){
       {id:"fall_elec",season:"fall",name:"Fall Safety Inspection Push",months:"Sep–Nov",icon:"🍂",desc:"Pre-winter safety inspections, panel audits, and outdoor lighting installs.",active:currentSeason==="fall"},
       {id:"winter_elec",season:"winter",name:"Winter Holiday Lighting",months:"Dec–Feb",icon:"❄️",desc:"Dedicated circuits, generator installs, and holiday lighting wiring jobs surge.",active:currentSeason==="winter"},
     ],
-    "Beauty Trades":[
-      {id:"spring_beauty",season:"spring",name:"Spring Wedding & Prom Season",months:"Mar–May",icon:"🌸",desc:"Bridal, prom, and special occasion bookings surge. High-value appointments and loyal rebooking.",active:currentSeason==="spring"},
-      {id:"summer_beauty",season:"summer",name:"Summer Glow-Up Season",months:"Jun–Aug",icon:"☀️",desc:"Skin care, waxing, and nail demand peaks. Clients invest in appearance for vacations and events.",active:currentSeason==="summer"},
-      {id:"fall_beauty",season:"fall",name:"Fall Refresh & Back-to-Routine",months:"Sep–Nov",icon:"🍂",desc:"Clients return from summer and re-establish service routines. Consistent appointment volume.",active:currentSeason==="fall"},
-      {id:"winter_beauty",season:"winter",name:"Holiday Party & Gift Season",months:"Dec–Feb",icon:"❄️",desc:"Holiday events and gift cards drive beauty bookings. High frequency of new client first visits.",active:currentSeason==="winter"},
+    "Beauty Schools":[
+      {id:"spring_beauty",season:"spring",name:"Spring Enrollment Push",months:"Mar–May",icon:"🌸",desc:"High school seniors making post-graduation plans. Prime window for cosmetology and esthetics program inquiries.",active:currentSeason==="spring"},
+      {id:"summer_beauty",season:"summer",name:"Summer Start Surge",months:"Jun–Aug",icon:"☀️",desc:"Biggest enrollment window of the year. Recent graduates and career changers actively seeking program starts.",active:currentSeason==="summer"},
+      {id:"fall_beauty",season:"fall",name:"Fall New Cohort Season",months:"Sep–Nov",icon:"🍂",desc:"Many schools launch new cohorts in fall. Strong inquiry volume from students who missed summer start.",active:currentSeason==="fall"},
+      {id:"winter_beauty",season:"winter",name:"New Year Career Changers",months:"Dec–Feb",icon:"❄️",desc:"Career change inquiries peak in January. Students setting new year goals and researching programs seriously.",active:currentSeason==="winter"},
     ],
   };
   const ind = user.industry || "HVAC";
@@ -1625,7 +1625,7 @@ function Dashboard({user,onLogout}){
   const sc={new:leads.filter(l=>l.status==="new").length,contacted:leads.filter(l=>l.status==="contacted").length,won,lost:leads.filter(l=>l.status==="lost").length};
   const hotCount=leads.filter(l=>l.tier==="hot").length;
 
-  const TABS=[{id:"pipeline",label:"Pipeline",icon:"⚡"},{id:"analytics",label:"Analytics",icon:"📊"},{id:"earnings",label:"Earnings",icon:"💰"},{id:"goals",label:"Goals",icon:"🎯"},{id:"market",label:"Market",icon:"🌐"},{id:"advisor",label:"AI Advisor",icon:"✦"},{id:"resources",label:"Resources",icon:"📚"},{id:"settings",label:"Settings",icon:"⚙️"}];
+  const TABS=[{id:"pipeline",label:"Pipeline",icon:"⚡"},{id:"analytics",label:"Analytics",icon:"📊"},{id:"earnings",label:"Earnings",icon:"💰"},{id:"goals",label:"Goals",icon:"🎯"},{id:"market",label:"Market",icon:"🌐"},{id:"advisor",label:"AI Advisor",icon:"✦"},{id:"photos",label:"Photos",icon:"📷"},{id:"referrals",label:"Referrals",icon:"🤝"},{id:"replay",label:"Lead Replay",icon:"↺"},{id:"resources",label:"Resources",icon:"📚"},{id:"settings",label:"Settings",icon:"⚙️"}];
 
   return <div style={{minHeight:"100vh",background:T.bg,display:"flex",flexDirection:"column",width:"100%"}}>
     {/* NAV */}
@@ -1849,6 +1849,12 @@ function Dashboard({user,onLogout}){
         <MarketIntelligenceView user={currentUser}/>
       ):view==="advisor"?(
         <AIAdvisorView user={currentUser} leads={leads}/>
+      ):view==="photos"?(
+        <JobPhotoGallery user={currentUser} leads={leads} toast={showToast}/>
+      ):view==="referrals"?(
+        <ReferralView user={currentUser} toast={showToast}/>
+      ):view==="replay"?(
+        <LeadReplayView user={currentUser} leads={leads} toast={showToast}/>
       ):view==="resources"?(
         <ResourcesView user={currentUser}/>
       ):(
@@ -1894,8 +1900,8 @@ function ContractorApplicationForm({onBack}){
   }));
 
   const LEAD_SOURCES=["HomeAdvisor","Angi","Thumbtack","Bark.com","Google Ads","Facebook Ads","Referrals","Door knocking","Yard signs","Nextdoor","Yelp","Other"];
-  const INDUSTRIES=["HVAC","Roofing","Plumbing","Electrical","Education (Beauty Trades)","Landscaping","Pest Control","Cleaning","Other"];
-  const REVENUE_BANDS=["Under $10k/mo","$10k–$25k/mo","$25k–$50k/mo","$50k–$100k/mo","$100k+/mo","Prefer not to say"];
+  const INDUSTRIES=["HVAC","Roofing","Plumbing","Electrical","Beauty Schools","Landscaping"];
+  const REVENUE_BANDS=["$0–$10k/mo","$10k–$25k/mo","$25k–$50k/mo","$50k–$100k/mo","$100k+/mo","Prefer not to say"];
   const TEAM_SIZES=["Just me","2–5","6–10","11–25","25+"];
   const YEARS=["Less than 1 year","1–3 years","3–5 years","5–10 years","10+ years"];
 
@@ -1925,11 +1931,11 @@ function ContractorApplicationForm({onBack}){
           <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}} className="grid-2-mobile">
             {INDUSTRIES.map(ind=>(
               <button key={ind} onClick={()=>set("industry")(ind)} style={{padding:"12px 8px",borderRadius:10,border:`2px solid ${form.industry===ind?T.blue:T.border2}`,background:form.industry===ind?"rgba(37,99,235,0.12)":T.surface2,color:form.industry===ind?T.white:T.offWhite,cursor:"pointer",fontSize:13,fontWeight:form.industry===ind?600:400,transition:"all 0.15s",touchAction:"manipulation"}}>
-                {ind==="HVAC"?"🌬️":ind==="Roofing"?"🏠":ind==="Plumbing"?"🔧":ind==="Electrical"?"⚡":ind==="Landscaping"?"🌿":ind==="Pest Control"?"🐛":ind==="Cleaning"?"🧹":"🔨"} {ind}
+                {ind==="HVAC"?"🌬️":ind==="Roofing"?"🏠":ind==="Plumbing"?"🔧":ind==="Electrical"?"⚡":ind==="Landscaping"?"🌿":ind==="Beauty Schools"?"💅":"🔨"} {ind}
               </button>
             ))}
           </div>
-          {form.industry==="Other"&&<div style={{marginTop:10}}><Inp label="Please specify" value={form.other_industry} onChange={set("other_industry")} placeholder="What trade?"/></div>}
+
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}} className="grid-1-mobile">
           <div>
@@ -1987,9 +1993,19 @@ function ContractorApplicationForm({onBack}){
     {
       title:"Why Streamline?",
       sub:"Tell us what you're looking to get out of this — helps us qualify the fit",
-      valid:form.why_interested.trim().length>20,
+      valid:form.why_interested.trim().length>=150,
       body:<div style={{display:"flex",flexDirection:"column",gap:14}}>
-        <Inp label="What's your biggest challenge with lead generation right now, and what made you reach out to Streamline?" value={form.why_interested} onChange={set("why_interested")} type="textarea" placeholder="e.g. We're spending $800/month on HomeAdvisor and closing maybe 1 in 10 leads. Half the time we're racing against 4 other contractors for the same job…" required hint="Be specific — this helps us tailor our pitch to your situation"/>
+        <div>
+          <Inp label="What's your biggest challenge with lead generation right now, and what made you reach out to Streamline?" value={form.why_interested} onChange={set("why_interested")} type="textarea" placeholder="e.g. We're spending $800/month on HomeAdvisor and closing maybe 1 in 10 leads. Half the time we're racing against 4 other contractors for the same job…" required hint="Be specific — this helps us tailor our pitch to your situation"/>
+          <div style={{display:"flex",justifyContent:"space-between",marginTop:5,fontSize:11}}>
+            <span style={{color:form.why_interested.trim().length>=150?T.green:T.amber}}>
+              {form.why_interested.trim().length>=150?"✓ Minimum met":"Minimum 150 characters required"}
+            </span>
+            <span style={{color:form.why_interested.trim().length>=150?T.green:T.muted,fontFamily:"'JetBrains Mono',monospace"}}>
+              {form.why_interested.trim().length}/150
+            </span>
+          </div>
+        </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}} className="grid-1-mobile">
           <Inp label="Instagram (optional)" value={form.social_instagram} onChange={set("social_instagram")} placeholder="@apexclimate"/>
           <Inp label="Facebook (optional)" value={form.social_facebook} onChange={set("social_facebook")} placeholder="facebook.com/apexclimate"/>
@@ -2158,14 +2174,14 @@ const INDUSTRY_DETAIL = {
     quote:{text:"\"EV charger installs are my most profitable jobs. Streamline sends me 2-3 a month and they're all pre-qualified.\"",attr:"Electrical contractor, New Albany OH"},
   },
   education:{
-    label:"Beauty Trades", icon:"💅", color:"#F472B6",
-    hero:"Beauty Leads From Clients Ready to Book.",
-    sub:"Cosmetologists, estheticians, nail techs, and beauty professionals — get pre-qualified clients delivered exclusively to your chair.",
-    pain:"The beauty industry problem: most professionals rely entirely on word of mouth, Instagram DMs, or generic booking platforms where they compete on price against 50 others in the same zip code.",
-    how:"Our intake captures the service type, occasion or urgency (e.g. wedding, ongoing care), budget, style preferences, and availability. Every client arrives pre-educated on pricing so the conversation starts from trust, not negotiation.",
-    stats:[{n:"$120",l:"avg service value on platform"},{n:"82%",l:"of beauty clients book within 24 hours"},{n:"1",l:"professional per client — always exclusive"},{n:"3.4×",l:"higher rebooking rate vs. cold leads"}],
-    features:["Service type and occasion captured at intake","Budget tier and style preferences pre-screened","Cosmetology, esthetics, nails, lash — issue-specific routing","Beauty school and training inquiry leads flagged separately"],
-    quote:{text:"\"I was relying on Instagram alone. Streamline fills my chair with serious clients who already know my pricing.\"",attr:"Esthetician, Columbus OH"},
+    label:"Beauty Schools", icon:"💅", color:"#F472B6",
+    hero:"Beauty School Leads From Students Ready to Enroll.",
+    sub:"Cosmetology, esthetics, nail tech, and barbering programs — connect with pre-qualified prospective students actively searching for their training program.",
+    pain:"The beauty school problem: most schools rely on walk-ins, referrals, and expensive radio ads. Prospective students are searching online right now, but most schools have no system to capture and qualify them before a competitor does.",
+    how:"Our intake captures the student's program interest, timeline to start, prior experience, financing needs, and location. You receive a complete admissions-ready profile before the first call — saving your admissions team hours of unqualified outreach.",
+    stats:[{n:"$14,000",l:"avg program tuition value on platform"},{n:"73%",l:"of inquiries are ready to enroll within 60 days"},{n:"1",l:"school per student lead — always exclusive"},{n:"4×",l:"more enrollments vs. walk-in inquiries"}],
+    features:["Program type and timeline to enroll captured upfront","Financial aid interest and budget pre-screened","Prior cosmetology experience flagged for advanced placement","Barbering, esthetics, nails, makeup — program-specific routing"],
+    quote:{text:"\"We were buying leads from three different lead gen companies and closing maybe 5%. Streamline sends us serious applicants and our close rate is over 30%.\"",attr:"Admissions Director, Columbus OH"},
   },
 };
 
@@ -2295,7 +2311,7 @@ function HeroBadge(){
     {label:"Roofing",    color:"#F59E0B", dot:"#F59E0B"},
     {label:"Plumbing",   color:"#10B981", dot:"#10B981"},
     {label:"Electrical", color:"#A78BFA", dot:"#A78BFA"},
-    {label:"Beauty",     color:"#F472B6", dot:"#F472B6"},
+    {label:"Beauty Schools", color:"#F472B6", dot:"#F472B6"},
   ];
   const [idx, setIdx] = useState(0);
   const [visible, setVisible] = useState(true);
@@ -2344,15 +2360,18 @@ function PromoBanner({onApply}){
   const [dismissed,setDismissed]=useState(false);
   if(dismissed)return null;
   return(
-    <div style={{position:"fixed",top:0,left:0,right:0,zIndex:300,background:`linear-gradient(90deg,#1E3A5F,${T.blue},#1E3A5F)`,padding:"10px 20px",display:"flex",alignItems:"center",justifyContent:"center",gap:12,flexWrap:"wrap"}}>
-      <div style={{display:"flex",alignItems:"center",gap:8}}>
-        <span style={{fontSize:13,background:"rgba(255,255,255,0.15)",borderRadius:4,padding:"2px 8px",fontWeight:700,fontFamily:"'JetBrains Mono',monospace",letterSpacing:"0.06em",color:"white",flexShrink:0}}>LIMITED TIME</span>
-        <span style={{fontSize:13,color:"white",fontWeight:500}}>First month subscription fee waived — apply before spots fill</span>
-        <span style={{fontSize:12,color:"rgba(255,255,255,0.65)"}}>· No setup fee · No commitment</span>
+    <div style={{position:"fixed",top:0,left:0,right:0,zIndex:300,background:T.surface,borderBottom:`1px solid ${T.border2}`,padding:"9px 20px",display:"flex",alignItems:"center",justifyContent:"center",gap:16,flexWrap:"wrap"}}>
+      <div style={{display:"flex",alignItems:"center",gap:10}}>
+        <div style={{display:"flex",alignItems:"center",gap:5,background:"rgba(37,99,235,0.1)",border:`1px solid rgba(37,99,235,0.25)`,borderRadius:4,padding:"2px 8px"}}>
+          <div style={{width:5,height:5,borderRadius:"50%",background:T.blueL,animation:"pulse 2s infinite"}}/>
+          <span style={{fontSize:10,fontFamily:"'JetBrains Mono',monospace",letterSpacing:"0.1em",color:T.blueL,fontWeight:600,textTransform:"uppercase"}}>Limited Time</span>
+        </div>
+        <span style={{fontSize:13,color:T.offWhite}}>First month subscription fee waived — apply before spots fill</span>
+        <span style={{fontSize:12,color:T.muted}}>· No setup fee · No commitment</span>
       </div>
-      <div style={{display:"flex",alignItems:"center",gap:8,marginLeft:"auto"}}>
-        <button onClick={onApply} style={{background:"white",color:T.blue,border:"none",borderRadius:6,padding:"5px 14px",fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>Claim Offer →</button>
-        <button onClick={()=>setDismissed(true)} style={{background:"none",border:"none",color:"rgba(255,255,255,0.5)",cursor:"pointer",fontSize:18,lineHeight:1,padding:"0 4px"}} title="Dismiss">×</button>
+      <div style={{display:"flex",alignItems:"center",gap:8}}>
+        <button onClick={onApply} style={{background:"none",border:`1px solid ${T.blueL}`,borderRadius:6,padding:"4px 14px",fontSize:12,fontWeight:600,cursor:"pointer",color:T.blueL,whiteSpace:"nowrap",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.background=`rgba(59,130,246,0.12)`;}} onMouseLeave={e=>{e.currentTarget.style.background="none";}}>Apply now →</button>
+        <button onClick={()=>setDismissed(true)} style={{background:"none",border:"none",color:T.muted,cursor:"pointer",fontSize:17,lineHeight:1,padding:"2px 4px"}} title="Dismiss">×</button>
       </div>
     </div>
   );
@@ -2456,7 +2475,7 @@ function LandingPage({onLogin,onIntakeForm,onApply,onIndustry}){
               <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:`linear-gradient(90deg,transparent,${v.color},transparent)`,opacity:0.6}}/>
               <div style={{width:56,height:56,borderRadius:"50%",background:`${v.color}15`,border:`1px solid ${v.color}30`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,margin:"0 auto 14px"}}>{v.icon}</div>
               <div style={{fontSize:16,fontWeight:700,marginBottom:8,color:T.white}}>{v.label}</div>
-              <div style={{fontSize:12,color:T.muted,lineHeight:1.6,marginBottom:14}}>{k==="hvac"?"Heating, cooling, and air quality leads with urgency and system type captured.":k==="roofing"?"Storm damage, replacements, and repairs — with scope and budget pre-qualified.":k==="plumbing"?"Emergency and planned jobs, scored by urgency, scope, and property type.":k==="electrical"?"Panel upgrades, EV chargers, and safety work — pre-qualified and high-value.":"Cosmetology, esthetics, nail care, and beauty services — pre-screened clients delivered to your chair."}</div>
+              <div style={{fontSize:12,color:T.muted,lineHeight:1.6,marginBottom:14}}>{k==="hvac"?"Heating, cooling, and air quality leads with urgency and system type captured.":k==="roofing"?"Storm damage, replacements, and repairs — with scope and budget pre-qualified.":k==="plumbing"?"Emergency and planned jobs, scored by urgency, scope, and property type.":k==="electrical"?"Panel upgrades, EV chargers, and safety work — pre-qualified and high-value.":"Cosmetology, esthetics, nail tech, and barbering — pre-qualified applicants delivered to your admissions team."}</div>
               <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5,fontSize:12,color:v.color,fontWeight:600}}>
                 See how it works <span className="ind-arrow" style={{opacity:0,transition:"opacity 0.2s",fontSize:14}}>→</span>
               </div>
@@ -2569,8 +2588,9 @@ function LandingPage({onLogin,onIntakeForm,onApply,onIndustry}){
         <SE c="Pricing"/>
         <SH c="Pay for what works." center/>
         <p style={{fontSize:14,color:T.offWhite,lineHeight:1.7,fontWeight:300,maxWidth:440,margin:"0 auto 16px"}}>Low monthly base keeps costs predictable. Performance fee only when you close a job.</p>
-        <div style={{display:"inline-flex",alignItems:"center",gap:8,background:"rgba(37,99,235,0.1)",border:"1px solid rgba(37,99,235,0.3)",borderRadius:8,padding:"8px 16px",marginBottom:28,fontSize:13,color:T.blueL}}>
-          🎁 <strong>Limited-time offer:</strong> First month subscription free when you apply now.
+        <div style={{display:"inline-flex",alignItems:"center",gap:8,background:T.surface2,border:`1px solid ${T.border2}`,borderRadius:8,padding:"8px 16px",marginBottom:28,fontSize:13,color:T.muted}}>
+          <div style={{width:6,height:6,borderRadius:"50%",background:T.blueL,flexShrink:0,animation:"pulse 2s infinite"}}/>
+          <span style={{color:T.offWhite}}>Limited-time:</span> First month subscription fee waived when you apply now.
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,maxWidth:860,margin:"0 auto",alignItems:"stretch"}} className="grid-1-mobile">
           {[
@@ -2852,7 +2872,7 @@ function ContractorModal({ contractor, onClose, onSave, toast }) {
     { value: "Roofing", label: "Roofing" },
     { value: "Plumbing", label: "Plumbing" },
     { value: "Electrical", label: "Electrical" },
-    { value: "Education", label: "Education (Beauty Trades)" },
+    { value: "Education", label: "Beauty Schools" },
   ];
 
   return (
@@ -6043,6 +6063,487 @@ Reference their actual data when relevant. Don't be generic — be their trusted
           {loading?<Spinner size={13}/>:"Send"}
         </button>
       </div>
+    </div>
+  );
+}
+
+// ─── REFERRAL TRACKING ────────────────────────────────────────────────────────
+function ReferralView({user,toast}){
+  const [referrals,setReferrals]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [showInvite,setShowInvite]=useState(false);
+  const [inviteEmail,setInviteEmail]=useState("");
+  const [inviteName,setInviteName]=useState("");
+  const [sending,setSending]=useState(false);
+  const [copied,setCopied]=useState(false);
+
+  const refCode=`SL-${(user.company||"REF").replace(/\s/g,"").substring(0,4).toUpperCase()}-${user.id.slice(-4).toUpperCase()}`;
+  const refLink=`${window.location.origin}/?ref=${refCode}`;
+
+  useEffect(()=>{
+    // Load referrals from localStorage (in production: query Supabase referrals table)
+    try{
+      const saved=localStorage.getItem(`referrals_${user.id}`);
+      if(saved)setReferrals(JSON.parse(saved));
+    }catch(e){}
+    setLoading(false);
+  },[user.id]);
+
+  const saveReferrals=(refs)=>{
+    setReferrals(refs);
+    try{localStorage.setItem(`referrals_${user.id}`,JSON.stringify(refs));}catch(e){}
+  };
+
+  const sendInvite=()=>{
+    if(!inviteEmail.trim())return;
+    setSending(true);
+    const newRef={
+      id:Date.now().toString(),
+      name:inviteName||inviteEmail.split("@")[0],
+      email:inviteEmail.trim(),
+      status:"invited",
+      invitedAt:new Date().toISOString(),
+      reward:null,
+      activeDays:0,
+    };
+    setTimeout(()=>{
+      saveReferrals([...referrals,newRef]);
+      toast({message:`Invite sent to ${inviteEmail}`,type:"success"});
+      setInviteEmail("");setInviteName("");setShowInvite(false);setSending(false);
+    },800);
+  };
+
+  const copyLink=()=>{
+    navigator.clipboard.writeText(refLink);
+    setCopied(true);
+    toast({message:"Referral link copied!",type:"success"});
+    setTimeout(()=>setCopied(false),2000);
+  };
+
+  const earned=referrals.filter(r=>r.status==="rewarded").length;
+  const pending=referrals.filter(r=>r.status==="signed_up"||r.status==="active").length;
+  const invited=referrals.filter(r=>r.status==="invited").length;
+
+  const STATUS_STYLE={
+    invited:{color:T.muted,bg:"rgba(100,116,139,0.1)",label:"Invited"},
+    signed_up:{color:T.amber,bg:"rgba(245,158,11,0.1)",label:"Signed Up"},
+    active:{color:T.cyan,bg:"rgba(6,182,212,0.1)",label:"Active"},
+    rewarded:{color:T.green,bg:"rgba(16,185,129,0.1)",label:"Reward Earned"},
+  };
+
+  return(
+    <div style={{animation:"fadeIn 0.3s ease"}}>
+      <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:24,flexWrap:"wrap",gap:12}}>
+        <div>
+          <h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:"clamp(20px,3vw,26px)",letterSpacing:-0.8,marginBottom:5}}>Referrals</h2>
+          <p style={{color:T.muted,fontSize:13}}>Refer a contractor — earn 1 free lead credit when they stay active for 60 days.</p>
+        </div>
+        <Btn onClick={()=>setShowInvite(true)} style={{display:"flex",alignItems:"center",gap:8}}>+ Invite a Contractor</Btn>
+      </div>
+
+      {/* Stats */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:20}} className="grid-2-mobile">
+        {[
+          {label:"Invites Sent",value:referrals.length,color:T.muted,icon:"✉️"},
+          {label:"Pending",value:pending,color:T.amber,icon:"⏳"},
+          {label:"Rewards Earned",value:earned,color:T.green,icon:"🎁"},
+          {label:"Est. Lead Credits",value:`${earned} free`,color:T.cyan,icon:"⚡"},
+        ].map(s=>(
+          <div key={s.label} style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:12,padding:"16px 18px"}}>
+            <div style={{fontSize:18,marginBottom:8}}>{s.icon}</div>
+            <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:22,fontWeight:700,color:s.color,lineHeight:1,marginBottom:3}}>{s.value}</div>
+            <div style={{fontSize:11,color:T.muted}}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Referral link */}
+      <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:12,padding:20,marginBottom:20}}>
+        <div style={{fontSize:12,fontWeight:600,color:T.offWhite,marginBottom:4}}>Your referral link</div>
+        <div style={{fontSize:11,color:T.muted,marginBottom:12}}>Share this link — when a contractor applies through it, they're tied to you automatically.</div>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <div style={{flex:1,background:T.surface2,border:`1px solid ${T.border2}`,borderRadius:8,padding:"9px 12px",fontSize:12,fontFamily:"'JetBrains Mono',monospace",color:T.blueL,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{refLink}</div>
+          <button onClick={copyLink} style={{background:copied?"rgba(16,185,129,0.12)":"none",border:`1px solid ${copied?T.green:T.border2}`,borderRadius:8,padding:"9px 14px",cursor:"pointer",color:copied?T.green:T.offWhite,fontSize:12,fontWeight:600,whiteSpace:"nowrap",transition:"all 0.2s"}}>
+            {copied?"✓ Copied":"Copy Link"}
+          </button>
+        </div>
+        <div style={{marginTop:12,display:"flex",gap:8,flexWrap:"wrap"}}>
+          <div style={{fontSize:11,color:T.muted,background:T.surface2,border:`1px solid ${T.border}`,borderRadius:6,padding:"4px 10px"}}>Your code: <span style={{color:T.blueL,fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>{refCode}</span></div>
+        </div>
+      </div>
+
+      {/* How it works */}
+      <div style={{background:"rgba(37,99,235,0.06)",border:"1px solid rgba(37,99,235,0.15)",borderRadius:12,padding:16,marginBottom:20}}>
+        <div style={{fontSize:12,fontWeight:600,color:T.blueL,marginBottom:10}}>How referral rewards work</div>
+        <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
+          {[
+            {step:"1",text:"Share your link or invite by email"},
+            {step:"2",text:"They apply and get approved"},
+            {step:"3",text:"Stay active 60+ days → you earn 1 free lead credit"},
+            {step:"4",text:"No limit — refer as many as you want"},
+          ].map(s=>(
+            <div key={s.step} style={{display:"flex",gap:8,alignItems:"flex-start",minWidth:180,flex:1}}>
+              <div style={{width:20,height:20,borderRadius:"50%",background:"rgba(37,99,235,0.2)",border:"1px solid rgba(37,99,235,0.35)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:T.blueL,flexShrink:0}}>{s.step}</div>
+              <div style={{fontSize:12,color:T.offWhite,lineHeight:1.5}}>{s.text}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Referral table */}
+      {loading?(
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:120,gap:12}}><Spinner/></div>
+      ):referrals.length===0?(
+        <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:14,padding:48,textAlign:"center"}}>
+          <div style={{fontSize:32,marginBottom:12}}>🤝</div>
+          <div style={{fontSize:15,color:T.offWhite,marginBottom:6}}>No referrals yet</div>
+          <div style={{fontSize:13,color:T.muted,marginBottom:20}}>Invite another contractor and earn a free lead when they go active.</div>
+          <Btn onClick={()=>setShowInvite(true)}>+ Send First Invite</Btn>
+        </div>
+      ):(
+        <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:14,overflow:"hidden"}}>
+          <div style={{display:"grid",gridTemplateColumns:"2fr 2fr 1fr 1fr 120px",padding:"10px 16px",borderBottom:`1px solid ${T.border}`,fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.07em"}}>
+            {["Name","Email","Status","Invited","Reward"].map(h=><div key={h}>{h}</div>)}
+          </div>
+          {referrals.map((r,i)=>{
+            const ss=STATUS_STYLE[r.status]||STATUS_STYLE.invited;
+            return(
+              <div key={r.id} style={{display:"grid",gridTemplateColumns:"2fr 2fr 1fr 1fr 120px",padding:"12px 16px",borderBottom:i<referrals.length-1?`1px solid ${T.border}`:"none",alignItems:"center",fontSize:13}}>
+                <div style={{fontWeight:600,color:T.white}}>{r.name}</div>
+                <div style={{fontSize:11,color:T.muted}}>{r.email}</div>
+                <div><span style={{fontSize:10,background:ss.bg,color:ss.color,border:`1px solid ${ss.color}30`,borderRadius:4,padding:"2px 8px",fontWeight:600,textTransform:"uppercase"}}>{ss.label}</span></div>
+                <div style={{fontSize:11,color:T.muted}}>{new Date(r.invitedAt).toLocaleDateString()}</div>
+                <div style={{fontSize:12,color:r.status==="rewarded"?T.green:T.muted}}>{r.status==="rewarded"?"✓ 1 free lead":"—"}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Invite modal */}
+      <Modal open={showInvite} onClose={()=>{setShowInvite(false);setInviteEmail("");setInviteName("");}} title="Invite a Contractor">
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          <p style={{fontSize:13,color:T.muted}}>Enter their info and we'll send them a personalized invite with your referral code included.</p>
+          <Inp label="Their Name (optional)" value={inviteName} onChange={setInviteName} placeholder="Mike from Apex Plumbing"/>
+          <Inp label="Their Email" value={inviteEmail} onChange={setInviteEmail} type="email" placeholder="mike@apexplumbing.com" required/>
+          <div style={{background:T.surface2,border:`1px solid ${T.border}`,borderRadius:8,padding:"10px 12px",fontSize:12,color:T.muted,lineHeight:1.6}}>
+            Your referral code <strong style={{color:T.blueL,fontFamily:"'JetBrains Mono',monospace"}}>{refCode}</strong> will be included automatically. You'll earn 1 free lead credit when they stay active for 60+ days.
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <Btn variant="outline" onClick={()=>{setShowInvite(false);setInviteEmail("");setInviteName("");}} style={{flex:1}}>Cancel</Btn>
+            <Btn onClick={sendInvite} disabled={!inviteEmail.trim()||sending} style={{flex:2}}>
+              {sending?<><Spinner size={13}/> Sending…</>:"Send Invite"}
+            </Btn>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+// ─── LEAD REPLAY ──────────────────────────────────────────────────────────────
+function LeadReplayView({user,leads,toast}){
+  const [replaying,setReplaying]=useState(null);
+  const [replayNote,setReplayNote]=useState("");
+  const [submitted,setSubmitted]=useState(new Set());
+
+  // Lost leads that scored 60+ and are at least 7 days old — eligible for replay
+  const eligibleLeads=leads.filter(l=>{
+    if(l.status!=="lost")return false;
+    if((l.score||0)<60)return false;
+    if(submitted.has(l.id))return false;
+    const daysOld=Math.floor((Date.now()-new Date(l.created_at))/(24*60*60*1000));
+    return daysOld>=7;
+  }).sort((a,b)=>b.score-a.score);
+
+  const requestReplay=async(lead)=>{
+    setReplaying(null);
+    const next=new Set(submitted);next.add(lead.id);setSubmitted(next);
+    // In production: insert a replay_requests row in Supabase
+    toast({message:`Replay requested for ${lead.name} — we'll re-contact and route back if they're still interested`,type:"success"});
+  };
+
+  const potentialValue=eligibleLeads.reduce((s,l)=>{
+    const ind=Object.values(INDUSTRIES).find(i=>i.label===l.industry);
+    // estimate mid-point from industry estimates if available
+    return s+1500; // fallback avg
+  },0);
+
+  return(
+    <div style={{animation:"fadeIn 0.3s ease"}}>
+      <div style={{marginBottom:24}}>
+        <h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:"clamp(20px,3vw,26px)",letterSpacing:-0.8,marginBottom:5}}>Lead Replay</h2>
+        <p style={{color:T.muted,fontSize:13}}>Lost leads scored 60+ that are at least 7 days old. Request a re-engagement and we'll check if they're still looking.</p>
+      </div>
+
+      {/* Value callout */}
+      {eligibleLeads.length>0&&(
+        <div style={{background:"rgba(16,185,129,0.06)",border:"1px solid rgba(16,185,129,0.2)",borderRadius:12,padding:"14px 20px",marginBottom:20,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
+          <div>
+            <div style={{fontSize:13,fontWeight:600,color:T.green,marginBottom:3}}>{eligibleLeads.length} leads eligible for replay</div>
+            <div style={{fontSize:12,color:T.muted}}>These were high-quality leads that went cold — some may still be in-market.</div>
+          </div>
+          <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:22,fontWeight:700,color:T.green}}>↺ {eligibleLeads.length}</div>
+        </div>
+      )}
+
+      {eligibleLeads.length===0?(
+        <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:14,padding:56,textAlign:"center"}}>
+          <div style={{fontSize:32,marginBottom:12}}>✨</div>
+          <div style={{fontSize:15,color:T.offWhite,marginBottom:6}}>No eligible leads for replay</div>
+          <div style={{fontSize:13,color:T.muted,maxWidth:400,margin:"0 auto"}}>Lost leads scored 60+ that are 7+ days old will appear here. Replay becomes available when a lead cools off enough that a fresh re-engagement might land differently.</div>
+        </div>
+      ):(
+        <div style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:14,overflow:"hidden"}}>
+          <div style={{display:"grid",gridTemplateColumns:"2fr 1.5fr 1fr 1fr 1fr 140px",padding:"10px 16px",borderBottom:`1px solid ${T.border}`,fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.07em"}}>
+            {["Lead","Service","Score","Days Lost","Contact",""].map(h=><div key={h}>{h}</div>)}
+          </div>
+          {eligibleLeads.map((l,i)=>{
+            const daysLost=Math.floor((Date.now()-new Date(l.created_at))/(24*60*60*1000));
+            return(
+              <div key={l.id} style={{display:"grid",gridTemplateColumns:"2fr 1.5fr 1fr 1fr 1fr 140px",padding:"13px 16px",borderBottom:i<eligibleLeads.length-1?`1px solid ${T.border}`:"none",alignItems:"center"}}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:600,color:T.white}}>{l.name}</div>
+                  <div style={{fontSize:11,color:T.muted}}>{l.phone}</div>
+                </div>
+                <div style={{fontSize:12,color:T.offWhite}}>{l.is_name||l.issue_type}</div>
+                <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:14,fontWeight:700,color:l.score>=75?T.green:l.score>=60?T.amber:T.muted}}>{l.score}</div>
+                <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:T.muted}}>{daysLost}d ago</div>
+                <div style={{fontSize:11}}>
+                  {l.phone&&<a href={`tel:${l.phone}`} style={{color:T.cyan,textDecoration:"none"}}>📞 {l.phone.slice(-4)}</a>}
+                </div>
+                <div>
+                  <button onClick={()=>{setReplaying(l);setReplayNote("");}} style={{background:"rgba(16,185,129,0.1)",border:"1px solid rgba(16,185,129,0.3)",borderRadius:8,padding:"7px 12px",cursor:"pointer",color:T.green,fontSize:12,fontWeight:600,whiteSpace:"nowrap"}}>
+                    ↺ Replay
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Recently replayed */}
+      {submitted.size>0&&(
+        <div style={{marginTop:16,background:T.surface,border:`1px solid ${T.border2}`,borderRadius:12,padding:"12px 16px"}}>
+          <div style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:T.muted,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Replays Requested This Session</div>
+          <div style={{fontSize:13,color:T.offWhite}}>{submitted.size} lead{submitted.size!==1?"s":""} queued for re-engagement by the Streamline team.</div>
+        </div>
+      )}
+
+      <Modal open={!!replaying} onClose={()=>setReplaying(null)} title={`Request Replay — ${replaying?.name}`}>
+        {replaying&&(
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            <div style={{background:T.surface2,borderRadius:8,padding:"12px 14px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,fontSize:12}}>
+              {[["Score",replaying.score],["Service",replaying.is_name||replaying.issue_type],["Phone",replaying.phone],["Lost",`${Math.floor((Date.now()-new Date(replaying.created_at))/(24*60*60*1000))}d ago`]].map(([k,v])=>(
+                <div key={k}><span style={{color:T.muted}}>{k}: </span><span style={{color:T.white,fontWeight:500}}>{v||"—"}</span></div>
+              ))}
+            </div>
+            <div>
+              <div style={{fontSize:12,fontWeight:600,color:T.offWhite,marginBottom:6}}>Notes for re-engagement (optional)</div>
+              <textarea value={replayNote} onChange={e=>setReplayNote(e.target.value)} placeholder="Any context for the re-outreach? e.g. 'They mentioned they might be ready in 30 days' or 'Offer the seasonal discount'" style={{width:"100%",background:T.surface2,border:`1px solid ${T.border2}`,borderRadius:8,padding:"10px 12px",color:T.white,fontSize:13,outline:"none",minHeight:80,resize:"vertical",fontFamily:"inherit",userSelect:"text",WebkitUserSelect:"text"}}/>
+            </div>
+            <div style={{background:"rgba(16,185,129,0.06)",border:"1px solid rgba(16,185,129,0.2)",borderRadius:8,padding:"10px 14px",fontSize:12,color:T.offWhite,lineHeight:1.6}}>
+              The Streamline team will re-contact this lead, mention it's a follow-up from your original conversation, and route them back to you if they're still interested.
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <Btn variant="outline" onClick={()=>setReplaying(null)} style={{flex:1}}>Cancel</Btn>
+              <Btn onClick={()=>requestReplay(replaying)} style={{flex:2,background:"rgba(16,185,129,0.15)",border:`1px solid ${T.green}`,color:T.green}}>↺ Request Replay</Btn>
+            </div>
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+}
+
+// ─── JOB PHOTO GALLERY ────────────────────────────────────────────────────────
+function JobPhotoGallery({user,leads,toast}){
+  const [photos,setPhotos]=useState([]);
+  const [uploading,setUploading]=useState(false);
+  const [showUpload,setShowUpload]=useState(false);
+  const [selectedLead,setSelectedLead]=useState("");
+  const [caption,setCaption]=useState("");
+  const [previewUrl,setPreviewUrl]=useState(null);
+  const [file,setFile]=useState(null);
+  const [lightbox,setLightbox]=useState(null);
+  const fileRef=useRef(null);
+
+  const storageKey=`photos_${user.id}`;
+
+  useEffect(()=>{
+    try{
+      const saved=localStorage.getItem(storageKey);
+      if(saved)setPhotos(JSON.parse(saved));
+    }catch(e){}
+  },[user.id]);
+
+  const savePhotos=(p)=>{
+    setPhotos(p);
+    try{localStorage.setItem(storageKey,JSON.stringify(p));}catch(e){}
+  };
+
+  const handleFileChange=(e)=>{
+    const f=e.target.files?.[0];
+    if(!f)return;
+    setFile(f);
+    const reader=new FileReader();
+    reader.onload=(ev)=>setPreviewUrl(ev.target.result);
+    reader.readAsDataURL(f);
+  };
+
+  const uploadPhoto=async()=>{
+    if(!file)return;
+    setUploading(true);
+    // In production: upload to Supabase Storage, get public URL
+    // For now, store base64 locally
+    const reader=new FileReader();
+    reader.onload=(ev)=>{
+      const lead=leads.find(l=>l.id===selectedLead);
+      const newPhoto={
+        id:Date.now().toString(),
+        dataUrl:ev.target.result,
+        caption:caption||"Job photo",
+        leadId:selectedLead,
+        leadName:lead?.name||"Unlinked",
+        jobType:lead?.is_name||lead?.issue_type||"",
+        uploadedAt:new Date().toISOString(),
+        askForReview:true,
+      };
+      const updated=[newPhoto,...photos];
+      savePhotos(updated);
+      setFile(null);setPreviewUrl(null);setCaption("");setSelectedLead("");
+      setShowUpload(false);setUploading(false);
+      toast({message:"Photo saved to gallery",type:"success"});
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const deletePhoto=(id)=>{
+    const updated=photos.filter(p=>p.id!==id);
+    savePhotos(updated);
+    if(lightbox?.id===id)setLightbox(null);
+    toast({message:"Photo deleted",type:"info"});
+  };
+
+  const wonLeads=leads.filter(l=>l.status==="won");
+
+  return(
+    <div style={{animation:"fadeIn 0.3s ease"}}>
+      <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:24,flexWrap:"wrap",gap:12}}>
+        <div>
+          <h2 style={{fontFamily:"'DM Serif Display',serif",fontSize:"clamp(20px,3vw,26px)",letterSpacing:-0.8,marginBottom:5}}>Job Photos</h2>
+          <p style={{color:T.muted,fontSize:13}}>Before & after photos tied to won jobs. Build your portfolio and use them to ask for reviews.</p>
+        </div>
+        <Btn onClick={()=>setShowUpload(true)} style={{display:"flex",alignItems:"center",gap:8}}>+ Add Photo</Btn>
+      </div>
+
+      {/* Stats bar */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:20}}>
+        {[
+          {label:"Total Photos",value:photos.length,color:T.blueL,icon:"📷"},
+          {label:"Linked to Jobs",value:photos.filter(p=>p.leadId).length,color:T.cyan,icon:"🔗"},
+          {label:"Review Reminders",value:photos.filter(p=>p.askForReview).length,color:T.amber,icon:"⭐"},
+        ].map(s=>(
+          <div key={s.label} style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:12,padding:"14px 18px"}}>
+            <div style={{fontSize:18,marginBottom:6}}>{s.icon}</div>
+            <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:22,fontWeight:700,color:s.color,lineHeight:1,marginBottom:3}}>{s.value}</div>
+            <div style={{fontSize:11,color:T.muted}}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Gallery grid */}
+      {photos.length===0?(
+        <div style={{background:T.surface,border:`2px dashed ${T.border2}`,borderRadius:14,padding:56,textAlign:"center"}}>
+          <div style={{fontSize:40,marginBottom:14}}>📷</div>
+          <div style={{fontSize:15,color:T.offWhite,marginBottom:8}}>No photos yet</div>
+          <div style={{fontSize:13,color:T.muted,maxWidth:380,margin:"0 auto 20px",lineHeight:1.6}}>Upload before & after photos tied to won jobs. They help you ask for reviews and build credibility with future leads.</div>
+          <Btn onClick={()=>setShowUpload(true)}>Upload First Photo</Btn>
+        </div>
+      ):(
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:14}}>
+          {photos.map(p=>(
+            <div key={p.id} style={{background:T.surface,border:`1px solid ${T.border2}`,borderRadius:12,overflow:"hidden",position:"relative"}}>
+              <div style={{position:"relative",aspectRatio:"4/3",overflow:"hidden",cursor:"pointer"}} onClick={()=>setLightbox(p)}>
+                <img src={p.dataUrl} alt={p.caption} style={{width:"100%",height:"100%",objectFit:"cover",transition:"transform 0.3s"}} onMouseEnter={e=>e.target.style.transform="scale(1.05)"} onMouseLeave={e=>e.target.style.transform="scale(1)"}/>
+                <div style={{position:"absolute",inset:0,background:"linear-gradient(0deg,rgba(0,0,0,0.6) 0%,transparent 50%)",pointerEvents:"none"}}/>
+                <div style={{position:"absolute",bottom:10,left:10,right:10}}>
+                  <div style={{fontSize:12,fontWeight:600,color:"white",marginBottom:2}}>{p.caption}</div>
+                  {p.jobType&&<div style={{fontSize:10,color:"rgba(255,255,255,0.7)"}}>{p.jobType}</div>}
+                </div>
+              </div>
+              <div style={{padding:"10px 12px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <div>
+                  <div style={{fontSize:11,color:T.offWhite,fontWeight:500}}>{p.leadName}</div>
+                  <div style={{fontSize:10,color:T.muted}}>{new Date(p.uploadedAt).toLocaleDateString()}</div>
+                </div>
+                <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                  {p.askForReview&&(
+                    <div title="Review reminder set" style={{width:22,height:22,borderRadius:"50%",background:"rgba(245,158,11,0.15)",border:"1px solid rgba(245,158,11,0.3)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11}}>⭐</div>
+                  )}
+                  <button onClick={()=>deletePhoto(p.id)} style={{background:"none",border:`1px solid ${T.border}`,borderRadius:6,padding:"3px 7px",cursor:"pointer",color:T.muted,fontSize:11}} title="Delete">✕</button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Upload modal */}
+      <Modal open={showUpload} onClose={()=>{setShowUpload(false);setFile(null);setPreviewUrl(null);setCaption("");setSelectedLead("");}} title="Add Job Photo" width={520}>
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          {/* File drop zone */}
+          <div onClick={()=>fileRef.current?.click()} style={{border:`2px dashed ${previewUrl?T.green:T.border2}`,borderRadius:12,padding:previewUrl?0:"32px 20px",textAlign:"center",cursor:"pointer",transition:"all 0.2s",overflow:"hidden",background:previewUrl?"none":T.surface2}} onMouseEnter={e=>!previewUrl&&(e.currentTarget.style.borderColor=T.blueL)} onMouseLeave={e=>!previewUrl&&(e.currentTarget.style.borderColor=T.border2)}>
+            {previewUrl?(
+              <img src={previewUrl} alt="Preview" style={{width:"100%",maxHeight:280,objectFit:"cover",borderRadius:10,display:"block"}}/>
+            ):(
+              <>
+                <div style={{fontSize:32,marginBottom:8}}>📷</div>
+                <div style={{fontSize:13,color:T.offWhite,marginBottom:4}}>Click to select a photo</div>
+                <div style={{fontSize:11,color:T.muted}}>JPG, PNG, HEIC — up to 10MB</div>
+              </>
+            )}
+          </div>
+          <input ref={fileRef} type="file" accept="image/*" onChange={handleFileChange} style={{display:"none"}}/>
+          {previewUrl&&<button onClick={()=>{setFile(null);setPreviewUrl(null);if(fileRef.current)fileRef.current.value="";}} style={{background:"none",border:`1px solid ${T.border2}`,borderRadius:6,padding:"5px 12px",cursor:"pointer",color:T.muted,fontSize:12,alignSelf:"flex-start"}}>Remove photo</button>}
+          <Inp label="Caption" value={caption} onChange={setCaption} placeholder="e.g. Full AC replacement — before & after"/>
+          <div>
+            <label style={{fontSize:12,fontWeight:600,color:T.offWhite,marginBottom:6,display:"block"}}>Link to a Won Job (optional)</label>
+            <select value={selectedLead} onChange={e=>setSelectedLead(e.target.value)} style={{width:"100%",background:T.surface2,border:`1px solid ${T.border2}`,borderRadius:8,padding:"9px 12px",color:selectedLead?T.white:T.muted,fontSize:13,outline:"none"}}>
+              <option value="">— Not linked to a job —</option>
+              {wonLeads.map(l=>(
+                <option key={l.id} value={l.id}>{l.name} — {l.is_name||l.issue_type} ({new Date(l.created_at).toLocaleDateString()})</option>
+              ))}
+            </select>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <Btn variant="outline" onClick={()=>{setShowUpload(false);setFile(null);setPreviewUrl(null);setCaption("");setSelectedLead("");}} style={{flex:1}}>Cancel</Btn>
+            <Btn onClick={uploadPhoto} disabled={!file||uploading} style={{flex:2}}>
+              {uploading?<><Spinner size={13}/> Saving…</>:"Save Photo"}
+            </Btn>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Lightbox */}
+      {lightbox&&(
+        <div onClick={()=>setLightbox(null)} style={{position:"fixed",inset:0,zIndex:2000,background:"rgba(0,0,0,0.92)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:T.surface,borderRadius:16,overflow:"hidden",maxWidth:720,width:"100%",maxHeight:"90vh",display:"flex",flexDirection:"column"}}>
+            <img src={lightbox.dataUrl} alt={lightbox.caption} style={{width:"100%",maxHeight:520,objectFit:"contain",background:"#000"}}/>
+            <div style={{padding:"14px 18px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>
+                <div style={{fontSize:14,fontWeight:600,color:T.white,marginBottom:2}}>{lightbox.caption}</div>
+                <div style={{fontSize:12,color:T.muted}}>{lightbox.leadName} · {new Date(lightbox.uploadedAt).toLocaleDateString()}</div>
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={()=>{deletePhoto(lightbox.id);setLightbox(null);}} style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.3)",borderRadius:8,padding:"7px 12px",cursor:"pointer",color:T.red,fontSize:12}}>Delete</button>
+                <button onClick={()=>setLightbox(null)} style={{background:T.surface2,border:`1px solid ${T.border2}`,borderRadius:8,padding:"7px 14px",cursor:"pointer",color:T.offWhite,fontSize:12}}>Close</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
